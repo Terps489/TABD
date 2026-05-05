@@ -11,6 +11,7 @@ DETAILED_DATA = DATA_DIR / "detailed_data.csv"
 STATIONS_META = DATA_DIR / "stations_metadata.csv"
 FIVE_STATIONS_DATA = DATA_DIR / "5stations_data.csv"
 FIVE_STATIONS_META = DATA_DIR / "5stations_metadata.csv"
+DATA_CACHE = MODELS_DIR / "data_cache.parquet"  # preprocessed data cache
 
 # ── Mode ───────────────────────────────────────────────────────────────────────
 # True = 5 stations (fast test ~5 min), False = 25 stations (full, ~30-60 min)

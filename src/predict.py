@@ -8,8 +8,8 @@ import numpy as np
 import torch
 from pytorch_forecasting import TemporalFusionTransformer
 
-from src.config import MODELS_DIR, OUTPUTS_DIR, TARGETS
-from src.data_loader import load_raw, preprocess, create_datasets
+from src.config import MODELS_DIR, OUTPUTS_DIR, DATA_CACHE, TARGETS
+from src.data_loader import create_datasets
 
 warnings.filterwarnings("ignore")
 
@@ -46,44 +46,56 @@ def predict(
     forecasts_dir = OUTPUTS_DIR / "forecasts"
     forecasts_dir.mkdir(exist_ok=True)
 
-    df = preprocess(load_raw(use_5_stations))
+    # Load from parquet cache (avoids CSV read after CUDA init = Windows DLL crash)
+    if not DATA_CACHE.exists():
+        raise FileNotFoundError(
+            f"Data cache not found: {DATA_CACHE}\n"
+            "Run training first: python run.py --mode train"
+        )
+    print(f"Loading cached data from {DATA_CACHE.name}...")
+    df = pd.read_parquet(DATA_CACHE)
+
     training, validation, _, val_loader = create_datasets(df)
 
     model = load_model(checkpoint_path)
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = model.to(device)
+    model.eval()
 
-    print("Generating predictions...")
-    raw_predictions = model.predict(
-        val_loader,
-        mode="raw",
-        return_x=True,
-    )
+    print("Generating predictions (mode=quantiles)...")
+    # quantiles mode returns list[Tensor] for multi-target, shape (n_samples, n_quantiles, pred_len)
+    preds = model.predict(val_loader, mode="quantiles", return_x=False)
 
-    predictions = raw_predictions.output
-    x = raw_predictions.x
+    # preds is list[Tensor] for multi-target
+    if not isinstance(preds, (list, tuple)):
+        preds = [preds[..., i] for i in range(len(TARGETS))]
 
     results = {}
     for i, target in enumerate(TARGETS):
-        # predictions shape: (n_samples, n_quantiles, prediction_length) per target
-        target_preds = predictions.prediction[..., i]  # (n_samples, prediction_length)
+        tp = preds[i].cpu().numpy()  # (n_samples, n_quantiles, pred_len) or (n_samples, pred_len, n_quantiles)
 
-        # Build dataframe
-        target_actual = predictions.output[..., i] if hasattr(predictions, 'output') else None
+        # Determine quantile axis: default QuantileLoss has 7 quantiles [0.02,0.1,0.25,0.5,0.75,0.9,0.98]
+        if tp.ndim == 3 and tp.shape[1] == 7:
+            # (n_samples, n_quantiles, pred_len)
+            p10, median, p90 = tp[:, 1, :], tp[:, 3, :], tp[:, 5, :]
+        elif tp.ndim == 3 and tp.shape[2] == 7:
+            # (n_samples, pred_len, n_quantiles)
+            p10, median, p90 = tp[:, :, 1], tp[:, :, 3], tp[:, :, 5]
+        else:
+            # fallback: use as-is
+            p10 = median = p90 = tp
 
         df_out = pd.DataFrame({
-            "station_id": x["groups"][:, 0].cpu().numpy(),
-            "forecast_p10": target_preds[:, 0].cpu().numpy(),
-            "forecast_median": target_preds[:, 3].cpu().numpy(),
-            "forecast_p90": target_preds[:, 6].cpu().numpy(),
+            "forecast_p10": p10.mean(axis=-1),
+            "forecast_median": median.mean(axis=-1),
+            "forecast_p90": p90.mean(axis=-1),
         })
         results[target] = df_out
         df_out.to_csv(forecasts_dir / f"{target}.csv", index=False)
+        print(f"  Saved: {target}.csv")
 
     # Feature importance
     _save_feature_importance(model, training, forecasts_dir)
 
-    print(f"Forecasts saved to {forecasts_dir}")
+    print(f"\nForecasts saved to {forecasts_dir}")
     return results
 
 

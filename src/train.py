@@ -11,7 +11,7 @@ from pytorch_forecasting import TemporalFusionTransformer
 from pytorch_forecasting.metrics import MultiLoss, QuantileLoss
 
 from src.config import (
-    MODELS_DIR, LOGS_DIR,
+    MODELS_DIR, LOGS_DIR, DATA_CACHE,
     MAX_EPOCHS, LEARNING_RATE, HIDDEN_SIZE, ATTENTION_HEAD_SIZE,
     DROPOUT, HIDDEN_CONTINUOUS_SIZE, GRADIENT_CLIP_VAL, TARGETS
 )
@@ -43,8 +43,10 @@ def train(use_5_stations: bool | None = None) -> Path:
     MODELS_DIR.mkdir(exist_ok=True)
     LOGS_DIR.mkdir(exist_ok=True)
 
-    # Data
+    # Data — read CSV BEFORE any GPU ops, then cache for predict
     df = preprocess(load_raw(use_5_stations))
+    df.to_parquet(DATA_CACHE, index=False)
+    print(f"Data cached: {DATA_CACHE}")
     training, _, train_loader, val_loader = create_datasets(df)
 
     # Model
