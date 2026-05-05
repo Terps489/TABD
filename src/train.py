@@ -18,6 +18,7 @@ from src.config import (
 from src.data_loader import load_raw, preprocess, create_datasets
 
 warnings.filterwarnings("ignore")
+torch.set_float32_matmul_precision("medium")  # RTX 4060 Ti Tensor Cores
 
 
 def build_model(training_dataset) -> TemporalFusionTransformer:

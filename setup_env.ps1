@@ -14,7 +14,8 @@ if (-not $?) { Write-Host "Failed to create conda env" -ForegroundColor Red; exi
 
 # Step 2: Install PyTorch with CUDA 12.4
 Write-Host "`n[2/4] Installing PyTorch with CUDA 12.4..." -ForegroundColor Yellow
-& $pythonPath -m pip install torch==2.5.1+cu124 torchvision==0.20.1+cu124 torchaudio==2.5.1+cu124 --index-url https://download.pytorch.org/whl/cu124
+& $pythonPath -m pip install torch==2.5.1+cu124 torchvision==0.20.1+cu124 torchaudio==2.5.1+cu124 --index-url https://download.pytorch.org/whl/cu124 --no-deps
+& $pythonPath -m pip install sympy==1.13.1 typing_extensions filelock jinja2 networkx fsspec pillow numpy
 if (-not $?) { Write-Host "Failed to install PyTorch" -ForegroundColor Red; exit 1 }
 
 # Step 3: Install project dependencies

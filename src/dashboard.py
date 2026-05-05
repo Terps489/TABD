@@ -34,6 +34,36 @@ FUEL_COLORS = px.colors.qualitative.Plotly[:7]
 
 SHOP_COLS = ["shop_напитки", "shop_закуски", "shop_автотовары", "shop_кофе", "shop_табак"]
 
+
+def _kpi_cards():
+    total_sales = df_raw["total_fuel_sales"].sum()
+    avg_hourly = df_raw["total_fuel_sales"].mean()
+    n_stations = df_raw["station_id"].nunique()
+    return dbc.Card(style=CARD, children=[
+        dbc.Row([
+            dbc.Col(html.Div([html.H6("АЗС", style={"color": "#aaa"}),
+                              html.H4(f"{n_stations}", style={"color": "#17a2b8"})]), width=4),
+            dbc.Col(html.Div([html.H6("Продажи", style={"color": "#aaa"}),
+                              html.H4(f"{total_sales/1e6:.1f}M л", style={"color": "#28a745"})]), width=4),
+            dbc.Col(html.Div([html.H6("Ср./час", style={"color": "#aaa"}),
+                              html.H4(f"{avg_hourly:.0f} л", style={"color": "#ffc107"})]), width=4),
+        ])
+    ])
+
+
+def _dark_layout(title: str) -> dict:
+    return dict(
+        title=dict(text=title, font=dict(color="#ccc", size=13)),
+        paper_bgcolor="#1e1e2e",
+        plot_bgcolor="#1e1e2e",
+        font=dict(color="#ccc"),
+        legend=dict(bgcolor="rgba(0,0,0,0.3)"),
+        margin=dict(l=40, r=20, t=40, b=40),
+        xaxis=dict(gridcolor="#333"),
+        yaxis=dict(gridcolor="#333"),
+    )
+
+
 # ── App layout ─────────────────────────────────────────────────────────────────
 app = dash.Dash(
     __name__,
@@ -198,22 +228,6 @@ app.layout = dbc.Container(fluid=True, children=[
         ]),
     ]),
 ], style={"backgroundColor": "#1a1a2e", "minHeight": "100vh"})
-
-
-def _kpi_cards():
-    total_sales = df_raw["total_fuel_sales"].sum()
-    avg_hourly = df_raw["total_fuel_sales"].mean()
-    n_stations = df_raw["station_id"].nunique()
-    return dbc.Card(style=CARD, children=[
-        dbc.Row([
-            dbc.Col(html.Div([html.H6("АЗС", style={"color": "#aaa"}),
-                              html.H4(f"{n_stations}", style={"color": "#17a2b8"})]), width=4),
-            dbc.Col(html.Div([html.H6("Продажи", style={"color": "#aaa"}),
-                              html.H4(f"{total_sales/1e6:.1f}M л", style={"color": "#28a745"})]), width=4),
-            dbc.Col(html.Div([html.H6("Ср./час", style={"color": "#aaa"}),
-                              html.H4(f"{avg_hourly:.0f} л", style={"color": "#ffc107"})]), width=4),
-        ])
-    ])
 
 
 # ── Callbacks: Overview ────────────────────────────────────────────────────────
@@ -500,20 +514,6 @@ def update_recommendations(start, end):
     fig_seasonal.update_layout(barmode="stack", **_dark_layout("Продажи по сезонам"))
 
     return rec_items, fig_top, fig_seasonal
-
-
-# ── Helpers ────────────────────────────────────────────────────────────────────
-def _dark_layout(title: str) -> dict:
-    return dict(
-        title=dict(text=title, font=dict(color="#ccc", size=13)),
-        paper_bgcolor="#1e1e2e",
-        plot_bgcolor="#1e1e2e",
-        font=dict(color="#ccc"),
-        legend=dict(bgcolor="rgba(0,0,0,0.3)"),
-        margin=dict(l=40, r=20, t=40, b=40),
-        xaxis=dict(gridcolor="#333"),
-        yaxis=dict(gridcolor="#333"),
-    )
 
 
 def run_dashboard():
