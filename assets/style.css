@@ -1,0 +1,168 @@
+/* Кастомные стили для тёмной темы дашборда */
+
+/* === Dropdown (dcc.Dropdown) === */
+.Select-control,
+.Select.is-focused > .Select-control,
+.Select.is-open > .Select-control {
+    background-color: #2a2a3e !important;
+    border-color: #444 !important;
+    color: #fff !important;
+}
+
+.Select-value-label,
+.Select-value > span,
+.Select-placeholder,
+.Select-input > input,
+.Select-input,
+.has-value.Select--single > .Select-control .Select-value .Select-value-label {
+    color: #fff !important;
+}
+
+.Select-menu-outer {
+    background-color: #2a2a3e !important;
+    border-color: #444 !important;
+    color: #fff !important;
+}
+
+.Select-option {
+    background-color: #2a2a3e !important;
+    color: #ddd !important;
+}
+
+.Select-option.is-focused,
+.Select-option:hover {
+    background-color: #17a2b8 !important;
+    color: #fff !important;
+}
+
+.Select-option.is-selected {
+    background-color: #1a4d5a !important;
+    color: #fff !important;
+}
+
+.Select-arrow,
+.Select-arrow-zone {
+    color: #aaa !important;
+}
+
+.Select-clear-zone,
+.Select-clear {
+    color: #aaa !important;
+}
+
+/* === Dropdown (новый rc-select / react-select) === */
+.dash-dropdown .Select__control,
+.dash-dropdown .Select__control--is-focused,
+.dash-dropdown .Select__control--is-open {
+    background-color: #2a2a3e !important;
+    border-color: #444 !important;
+}
+
+.dash-dropdown .Select__single-value,
+.dash-dropdown .Select__placeholder,
+.dash-dropdown .Select__input-container,
+.dash-dropdown .Select__input {
+    color: #fff !important;
+}
+
+.dash-dropdown .Select__menu {
+    background-color: #2a2a3e !important;
+    color: #fff !important;
+}
+
+.dash-dropdown .Select__option {
+    background-color: #2a2a3e !important;
+    color: #ddd !important;
+}
+
+.dash-dropdown .Select__option--is-focused {
+    background-color: #17a2b8 !important;
+}
+
+/* === DatePicker (dcc.DatePickerRange) === */
+.DateInput,
+.DateInput_input,
+.DateRangePickerInput,
+.DateRangePicker {
+    background-color: #2a2a3e !important;
+    color: #fff !important;
+}
+
+.DateInput_input {
+    border: none !important;
+    color: #fff !important;
+    padding: 8px !important;
+}
+
+.DateRangePickerInput {
+    border: 1px solid #444 !important;
+    border-radius: 4px !important;
+}
+
+.DateRangePickerInput_arrow svg,
+.DateRangePickerInput_clearDates_default svg {
+    fill: #aaa !important;
+}
+
+/* Календарь (попап) */
+.DayPicker,
+.DayPicker_focusRegion,
+.CalendarMonthGrid,
+.CalendarMonth {
+    background-color: #2a2a3e !important;
+    color: #fff !important;
+}
+
+.CalendarMonth_caption,
+.DayPicker_weekHeader_li small {
+    color: #fff !important;
+}
+
+.CalendarDay__default {
+    background-color: #2a2a3e !important;
+    color: #fff !important;
+    border: 1px solid #444 !important;
+}
+
+.CalendarDay__selected,
+.CalendarDay__selected_span,
+.CalendarDay__hovered_span {
+    background-color: #17a2b8 !important;
+    color: #fff !important;
+    border: 1px solid #17a2b8 !important;
+}
+
+.CalendarDay__default:hover {
+    background-color: #444 !important;
+}
+
+/* === Checklist === */
+.dash-checklist label,
+input[type="checkbox"] + label {
+    color: #ccc !important;
+}
+
+/* === Карточки и контейнеры === */
+.card {
+    background-color: #1e1e2e !important;
+    border-color: #333 !important;
+}
+
+/* Подсветка скроллбара */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #1a1a2e;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #444;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #17a2b8;
+}
