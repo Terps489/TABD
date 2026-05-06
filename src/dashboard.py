@@ -392,9 +392,9 @@ def update_forecast(station, target):
         fig.update_layout(**_dark_layout("Прогноз TFT"))
         return fig, "Файл прогноза не найден. Запустите обучение.", "warning"
 
-    df_fc = pd.read_csv(forecast_file)
-    station_id = df_raw[df_raw["station_name"] == station]["station_id"].iloc[0]
-    df_station = df_fc[df_fc["station_id"] == str(station_id)]
+    df_fc = pd.read_csv(forecast_file, dtype={"station_id": str})
+    station_id = str(df_raw[df_raw["station_name"] == station]["station_id"].iloc[0])
+    df_station = df_fc[df_fc["station_id"] == station_id]
 
     d_actual = df_raw[df_raw["station_name"] == station].copy()
     d_actual_last = d_actual.tail(len(df_station)).reset_index(drop=True)

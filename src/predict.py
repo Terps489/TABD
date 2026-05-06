@@ -61,8 +61,14 @@ def predict(
     model.eval()
 
     print("Генерация прогнозов (mode=quantiles)...")
-    # Режим quantiles возвращает list[Tensor] для multi-target, форма (n_samples, n_quantiles, pred_len)
-    preds = model.predict(val_loader, mode="quantiles", return_x=False)
+    # Режим quantiles возвращает list[Tensor] для multi-target
+    preds_obj = model.predict(val_loader, mode="quantiles", return_x=True)
+    preds = preds_obj.output
+    x = preds_obj.x
+
+    # Соответствие сэмпл -> station_id (через index валидационной выборки)
+    index_df = validation.x_to_index(x)
+    sample_station_ids = index_df["station_id"].astype(str).tolist()
 
     # preds — list[Tensor] для multi-target
     if not isinstance(preds, (list, tuple)):
@@ -84,6 +90,7 @@ def predict(
             p10 = median = p90 = tp
 
         df_out = pd.DataFrame({
+            "station_id": sample_station_ids,
             "forecast_p10": p10.mean(axis=-1),
             "forecast_median": median.mean(axis=-1),
             "forecast_p90": p90.mean(axis=-1),
