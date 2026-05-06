@@ -1,4 +1,4 @@
-"""Load trained TFT and generate forecasts + recommendations."""
+"""Загрузка обученного TFT, генерация прогнозов и рекомендаций."""
 import json
 import warnings
 from pathlib import Path
@@ -15,20 +15,20 @@ warnings.filterwarnings("ignore")
 
 
 def load_model(checkpoint_path: str | Path | None = None) -> TemporalFusionTransformer:
-    """Load TFT from checkpoint. Auto-finds best checkpoint if path not given."""
+    """Загрузить TFT из чекпоинта. Если путь не указан — найдёт лучший автоматически."""
     if checkpoint_path is None:
         meta_file = MODELS_DIR / "training_meta.json"
         if meta_file.exists():
             meta = json.loads(meta_file.read_text())
             checkpoint_path = meta["best_checkpoint"]
         else:
-            # Find latest checkpoint
+            # Найти последний чекпоинт
             ckpts = sorted(MODELS_DIR.glob("tft-*.ckpt"))
             if not ckpts:
-                raise FileNotFoundError(f"No checkpoint found in {MODELS_DIR}. Run training first.")
+                raise FileNotFoundError(f"Чекпоинт не найден в {MODELS_DIR}. Сначала запустите обучение.")
             checkpoint_path = ckpts[-1]
 
-    print(f"Loading model from: {checkpoint_path}")
+    print(f"Загрузка модели: {checkpoint_path}")
     model = TemporalFusionTransformer.load_from_checkpoint(str(checkpoint_path))
     model.eval()
     return model
@@ -39,20 +39,20 @@ def predict(
     checkpoint_path: str | Path | None = None,
 ) -> dict[str, pd.DataFrame]:
     """
-    Run inference on validation set.
-    Returns dict: {target_name -> DataFrame(station_id, timestamp, actual, forecast_median, forecast_p10, forecast_p90)}
+    Запустить инференс на валидационной выборке.
+    Возвращает dict: {имя_таргета -> DataFrame с forecast_p10, forecast_median, forecast_p90}
     """
     OUTPUTS_DIR.mkdir(exist_ok=True)
     forecasts_dir = OUTPUTS_DIR / "forecasts"
     forecasts_dir.mkdir(exist_ok=True)
 
-    # Load from parquet cache (avoids CSV read after CUDA init = Windows DLL crash)
+    # Загрузка из parquet-кэша (обходит Windows DLL-конфликт CUDA + чтение CSV)
     if not DATA_CACHE.exists():
         raise FileNotFoundError(
-            f"Data cache not found: {DATA_CACHE}\n"
-            "Run training first: python run.py --mode train"
+            f"Кэш данных не найден: {DATA_CACHE}\n"
+            "Сначала запустите обучение: python run.py --mode train"
         )
-    print(f"Loading cached data from {DATA_CACHE.name}...")
+    print(f"Загрузка кэша данных из {DATA_CACHE.name}...")
     df = pd.read_parquet(DATA_CACHE)
 
     training, validation, _, val_loader = create_datasets(df)
@@ -60,19 +60,19 @@ def predict(
     model = load_model(checkpoint_path)
     model.eval()
 
-    print("Generating predictions (mode=quantiles)...")
-    # quantiles mode returns list[Tensor] for multi-target, shape (n_samples, n_quantiles, pred_len)
+    print("Генерация прогнозов (mode=quantiles)...")
+    # Режим quantiles возвращает list[Tensor] для multi-target, форма (n_samples, n_quantiles, pred_len)
     preds = model.predict(val_loader, mode="quantiles", return_x=False)
 
-    # preds is list[Tensor] for multi-target
+    # preds — list[Tensor] для multi-target
     if not isinstance(preds, (list, tuple)):
         preds = [preds[..., i] for i in range(len(TARGETS))]
 
     results = {}
     for i, target in enumerate(TARGETS):
-        tp = preds[i].cpu().numpy()  # (n_samples, n_quantiles, pred_len) or (n_samples, pred_len, n_quantiles)
+        tp = preds[i].cpu().numpy()  # (n_samples, n_quantiles, pred_len) или (n_samples, pred_len, n_quantiles)
 
-        # Determine quantile axis: default QuantileLoss has 7 quantiles [0.02,0.1,0.25,0.5,0.75,0.9,0.98]
+        # Определяем ось квантилей: дефолтный QuantileLoss даёт 7 квантилей [0.02,0.1,0.25,0.5,0.75,0.9,0.98]
         if tp.ndim == 3 and tp.shape[1] == 7:
             # (n_samples, n_quantiles, pred_len)
             p10, median, p90 = tp[:, 1, :], tp[:, 3, :], tp[:, 5, :]
@@ -80,7 +80,7 @@ def predict(
             # (n_samples, pred_len, n_quantiles)
             p10, median, p90 = tp[:, :, 1], tp[:, :, 3], tp[:, :, 5]
         else:
-            # fallback: use as-is
+            # На всякий случай: используем как есть
             p10 = median = p90 = tp
 
         df_out = pd.DataFrame({
@@ -90,12 +90,12 @@ def predict(
         })
         results[target] = df_out
         df_out.to_csv(forecasts_dir / f"{target}.csv", index=False)
-        print(f"  Saved: {target}.csv")
+        print(f"  Сохранено: {target}.csv")
 
-    # Feature importance
+    # Важность признаков
     _save_feature_importance(model, training, forecasts_dir)
 
-    print(f"\nForecasts saved to {forecasts_dir}")
+    print(f"\nПрогнозы сохранены в {forecasts_dir}")
     return results
 
 
@@ -127,13 +127,13 @@ def _save_feature_importance(model, training, out_dir: Path):
         (out_dir / "feature_importance.json").write_text(
             json.dumps(importance, indent=2, ensure_ascii=False)
         )
-        print("Feature importance saved.")
+        print("Важность признаков сохранена.")
     except Exception as e:
-        print(f"Could not compute feature importance: {e}")
+        print(f"Не удалось рассчитать важность признаков: {e}")
 
 
 def generate_recommendations(importance_path: Path | None = None) -> list[str]:
-    """Text recommendations based on feature importance."""
+    """Текстовые рекомендации на основе важности признаков."""
     if importance_path is None:
         importance_path = OUTPUTS_DIR / "forecasts" / "feature_importance.json"
 

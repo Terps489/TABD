@@ -1,6 +1,6 @@
 from pathlib import Path
 
-# ── Paths ──────────────────────────────────────────────────────────────────────
+# ── Пути ───────────────────────────────────────────────────────────────────────
 DATA_DIR = Path(r"C:\Users\Admin\Desktop\ОбучениеМагистратура\ТАБД\Задание 6")
 PROJECT_DIR = Path(r"D:\project\TABD")
 MODELS_DIR = PROJECT_DIR / "models"
@@ -11,15 +11,15 @@ DETAILED_DATA = DATA_DIR / "detailed_data.csv"
 STATIONS_META = DATA_DIR / "stations_metadata.csv"
 FIVE_STATIONS_DATA = DATA_DIR / "5stations_data.csv"
 FIVE_STATIONS_META = DATA_DIR / "5stations_metadata.csv"
-DATA_CACHE = MODELS_DIR / "data_cache.parquet"  # preprocessed data cache
+DATA_CACHE = MODELS_DIR / "data_cache.parquet"  # кэш предобработанных данных
 
-# ── Mode ───────────────────────────────────────────────────────────────────────
-# True = 5 stations (fast test ~5 min), False = 25 stations (full, ~30-60 min)
+# ── Режим ──────────────────────────────────────────────────────────────────────
+# True = 5 АЗС (быстрый тест ~5 мин), False = 25 АЗС (полный, ~30-60 мин)
 USE_5_STATIONS = False
 
-# ── TFT Hyperparameters ────────────────────────────────────────────────────────
-MAX_PREDICTION_LENGTH = 24       # hours ahead to forecast
-MAX_ENCODER_LENGTH = 7 * 24     # context window: 1 week
+# ── Гиперпараметры TFT ─────────────────────────────────────────────────────────
+MAX_PREDICTION_LENGTH = 24       # горизонт прогноза (часов вперёд)
+MAX_ENCODER_LENGTH = 7 * 24     # окно контекста: 1 неделя
 BATCH_SIZE = 64
 MAX_EPOCHS = 30
 LEARNING_RATE = 3e-3
@@ -29,10 +29,10 @@ DROPOUT = 0.1
 HIDDEN_CONTINUOUS_SIZE = 32
 GRADIENT_CLIP_VAL = 0.1
 
-# Validation: last 7 days of data
+# Валидация: последние 7 дней данных
 VAL_SPLIT_HOURS = 7 * 24
 
-# ── Target variables ───────────────────────────────────────────────────────────
+# ── Целевые переменные ─────────────────────────────────────────────────────────
 TARGETS = [
     "total_fuel_sales",
     "sales_AI92",
@@ -45,7 +45,7 @@ TARGETS = [
     "shop_total_revenue",
 ]
 
-# ── Dashboard ──────────────────────────────────────────────────────────────────
+# ── Дашборд ────────────────────────────────────────────────────────────────────
 DASHBOARD_HOST = "0.0.0.0"
 DASHBOARD_PORT = 8050
 DASHBOARD_DEBUG = False

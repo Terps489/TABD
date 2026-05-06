@@ -1,4 +1,4 @@
-"""Interactive Dash dashboard for TFT analysis of Tatneft gas stations."""
+"""Интерактивный Dash-дашборд для TFT-анализа сети АЗС Татнефть."""
 import json
 import warnings
 from pathlib import Path
@@ -21,7 +21,7 @@ from src.predict import generate_recommendations
 
 warnings.filterwarnings("ignore")
 
-# ── Load data ──────────────────────────────────────────────────────────────────
+# ── Загрузка данных ────────────────────────────────────────────────────────────
 _data_path = FIVE_STATIONS_DATA if USE_5_STATIONS else DETAILED_DATA
 df_raw = pd.read_csv(_data_path, parse_dates=["timestamp"])
 df_meta = pd.read_csv(STATIONS_META)
@@ -64,17 +64,17 @@ def _dark_layout(title: str) -> dict:
     )
 
 
-# ── App layout ─────────────────────────────────────────────────────────────────
+# ── Layout приложения ──────────────────────────────────────────────────────────
 app = dash.Dash(
     __name__,
     external_stylesheets=[dbc.themes.DARKLY],
-    title="Татнефть АЗС — TFT Dashboard",
+    title="Татнефть АЗС — TFT Дашборд",
 )
 
 CARD = {"borderRadius": "8px", "padding": "16px", "marginBottom": "16px"}
 
 app.layout = dbc.Container(fluid=True, children=[
-    # Header
+    # Шапка
     dbc.Row([
         dbc.Col(html.H2("Татнефть АЗС — TFT Аналитика", style={"color": "#17a2b8"}), width=8),
         dbc.Col(html.P("Анализ продаж топлива | Temporal Fusion Transformer",
@@ -83,7 +83,7 @@ app.layout = dbc.Container(fluid=True, children=[
 
     dbc.Tabs([
 
-        # ── Tab 1: Overview ────────────────────────────────────────────────────
+        # ── Вкладка 1: Обзор сети ──────────────────────────────────────────────
         dbc.Tab(label="Обзор сети", children=[
             dbc.Row([
                 dbc.Col([
@@ -129,7 +129,7 @@ app.layout = dbc.Container(fluid=True, children=[
             ]),
         ]),
 
-        # ── Tab 2: Station Analysis ────────────────────────────────────────────
+        # ── Вкладка 2: Анализ АЗС ──────────────────────────────────────────────
         dbc.Tab(label="Анализ АЗС", children=[
             dbc.Row([
                 dbc.Col([
@@ -161,7 +161,7 @@ app.layout = dbc.Container(fluid=True, children=[
             dbc.Row([dbc.Col(dcc.Graph(id="station-weather-impact"), width=12)]),
         ]),
 
-        # ── Tab 3: Forecasts ───────────────────────────────────────────────────
+        # ── Вкладка 3: Прогнозы TFT ────────────────────────────────────────────
         dbc.Tab(label="Прогнозы TFT", children=[
             dbc.Row([
                 dbc.Col([
@@ -194,7 +194,7 @@ app.layout = dbc.Container(fluid=True, children=[
             )]),
         ]),
 
-        # ── Tab 4: Factor Analysis ─────────────────────────────────────────────
+        # ── Вкладка 4: Факторный анализ ────────────────────────────────────────
         dbc.Tab(label="Факторный анализ", children=[
             dbc.Row([
                 dbc.Col(dcc.Graph(id="factor-importance"), width=7),
@@ -208,7 +208,7 @@ app.layout = dbc.Container(fluid=True, children=[
             dbc.Row([dbc.Col(dcc.Graph(id="factor-competitor"), width=12)]),
         ]),
 
-        # ── Tab 5: Recommendations ─────────────────────────────────────────────
+        # ── Вкладка 5: Рекомендации ────────────────────────────────────────────
         dbc.Tab(label="Рекомендации", children=[
             dbc.Row([
                 dbc.Col([
@@ -230,7 +230,7 @@ app.layout = dbc.Container(fluid=True, children=[
 ], style={"backgroundColor": "#1a1a2e", "minHeight": "100vh"})
 
 
-# ── Callbacks: Overview ────────────────────────────────────────────────────────
+# ── Callbacks: Обзор сети ──────────────────────────────────────────────────────
 @app.callback(
     Output("overview-fuel-trend", "figure"),
     Output("overview-fuel-pie", "figure"),
@@ -243,7 +243,7 @@ def update_overview(start, end, agg):
     d = df_raw[mask].copy()
     d_agg = d.groupby(pd.Grouper(key="timestamp", freq=agg))[FUEL_COLS].sum().reset_index()
 
-    # Trend chart
+    # График динамики
     fig_trend = go.Figure()
     for col, label, color in zip(FUEL_COLS, FUEL_LABELS, FUEL_COLORS):
         fig_trend.add_trace(go.Scatter(
@@ -252,7 +252,7 @@ def update_overview(start, end, agg):
         ))
     fig_trend.update_layout(**_dark_layout("Динамика продаж топлива (литры)"))
 
-    # Pie chart
+    # Круговая диаграмма
     totals = d[FUEL_COLS].sum()
     fig_pie = go.Figure(go.Pie(
         labels=FUEL_LABELS, values=totals.values,
@@ -311,7 +311,7 @@ def update_heatmap(start, end):
     return fig
 
 
-# ── Callbacks: Station Analysis ────────────────────────────────────────────────
+# ── Callbacks: Анализ АЗС ──────────────────────────────────────────────────────
 @app.callback(
     Output("station-sales", "figure"),
     Output("station-hourly", "figure"),
@@ -333,7 +333,7 @@ def update_station(station, fuel_cols):
             ))
     fig_sales.update_layout(**_dark_layout(f"Ежедневные продажи — {station}"))
 
-    # Hourly pattern
+    # Суточный паттерн
     hourly = d.groupby("hour")["total_fuel_sales"].mean().reset_index()
     fig_hourly = go.Figure(go.Bar(
         x=hourly["hour"], y=hourly["total_fuel_sales"],
@@ -341,7 +341,7 @@ def update_station(station, fuel_cols):
     ))
     fig_hourly.update_layout(**_dark_layout("Суточный паттерн (ср. литры/час)"))
 
-    # Weekly pattern
+    # Недельный паттерн
     dow_labels = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
     weekly = d.groupby("day_of_week")["total_fuel_sales"].mean().reset_index()
     fig_weekly = go.Figure(go.Bar(
@@ -351,7 +351,7 @@ def update_station(station, fuel_cols):
     ))
     fig_weekly.update_layout(**_dark_layout("Недельный паттерн"))
 
-    # Weather impact
+    # Влияние погоды
     weather_agg = d.groupby("weather_condition")["total_fuel_sales"].mean().reset_index()
     fig_weather = go.Figure(go.Bar(
         x=weather_agg["weather_condition"],
@@ -363,7 +363,7 @@ def update_station(station, fuel_cols):
     return fig_sales, fig_hourly, fig_weekly, fig_weather
 
 
-# ── Callbacks: Forecasts ───────────────────────────────────────────────────────
+# ── Callbacks: Прогнозы ────────────────────────────────────────────────────────
 @app.callback(
     Output("forecast-chart", "figure"),
     Output("forecast-status", "children"),
@@ -414,7 +414,7 @@ def update_forecast(station, target):
     return fig, "Прогноз загружен успешно.", "success"
 
 
-# ── Callbacks: Factor Analysis ─────────────────────────────────────────────────
+# ── Callbacks: Факторный анализ ────────────────────────────────────────────────
 @app.callback(
     Output("factor-importance", "figure"),
     Output("factor-promo", "figure"),
@@ -422,7 +422,7 @@ def update_forecast(station, target):
     Input("overview-date-range", "end_date"),
 )
 def update_factors(start, end):
-    # Feature importance from model
+    # Важность признаков из модели
     fi_file = OUTPUTS_DIR / "forecasts" / "feature_importance.json"
     if fi_file.exists():
         data = json.loads(fi_file.read_text())
@@ -435,7 +435,7 @@ def update_factors(start, end):
             marker_color="#17a2b8"
         ))
     else:
-        # Fallback: correlation-based importance
+        # Fallback: важность через корреляцию
         mask = (df_raw["timestamp"] >= start) & (df_raw["timestamp"] <= end)
         d = df_raw[mask]
         num_cols = ["temperature", "total_traffic", "precipitation_mm",
@@ -449,7 +449,7 @@ def update_factors(start, end):
         ))
     fig_imp.update_layout(**_dark_layout("Важность факторов (TFT или корреляция)"))
 
-    # Promotion effect
+    # Эффект акций
     mask = (df_raw["timestamp"] >= start) & (df_raw["timestamp"] <= end)
     d = df_raw[mask]
     promo_agg = d.groupby("promotion_fuel_active")["total_fuel_sales"].mean().reset_index()
@@ -478,7 +478,7 @@ def update_competitor(station):
     return fig
 
 
-# ── Callbacks: Recommendations ─────────────────────────────────────────────────
+# ── Callbacks: Рекомендации ────────────────────────────────────────────────────
 @app.callback(
     Output("recommendations-text", "children"),
     Output("rec-top-stations", "figure"),
@@ -490,7 +490,7 @@ def update_recommendations(start, end):
     recs = generate_recommendations()
     rec_items = [html.P(r, style={"color": "#ccc", "fontSize": "15px"}) for r in recs]
 
-    # Top stations
+    # Топ АЗС
     top = df_raw.groupby("station_name")["total_fuel_sales"].sum().nlargest(10).reset_index()
     fig_top = go.Figure(go.Bar(
         x=top["total_fuel_sales"], y=top["station_name"],
@@ -498,7 +498,7 @@ def update_recommendations(start, end):
     ))
     fig_top.update_layout(**_dark_layout("Топ-10 АЗС по продажам"))
 
-    # Seasonal
+    # Сезонность
     seasonal = df_raw.groupby("season")[FUEL_COLS].sum().reset_index()
     season_order = {"winter": 0, "spring": 1, "summer": 2, "autumn": 3}
     season_labels = {"winter": "Зима", "spring": "Весна", "summer": "Лето", "autumn": "Осень"}
@@ -517,7 +517,7 @@ def update_recommendations(start, end):
 
 
 def run_dashboard():
-    print(f"\nDashboard: http://localhost:{DASHBOARD_PORT}")
+    print(f"\nДашборд: http://localhost:{DASHBOARD_PORT}")
     app.run(host=DASHBOARD_HOST, port=DASHBOARD_PORT, debug=DASHBOARD_DEBUG)
 
 

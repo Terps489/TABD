@@ -1,4 +1,4 @@
-"""TFT training with checkpointing and early stopping."""
+"""Обучение TFT с сохранением чекпоинтов и early stopping."""
 import json
 import warnings
 from pathlib import Path
@@ -18,7 +18,7 @@ from src.config import (
 from src.data_loader import load_raw, preprocess, create_datasets
 
 warnings.filterwarnings("ignore")
-torch.set_float32_matmul_precision("medium")  # RTX 4060 Ti Tensor Cores
+torch.set_float32_matmul_precision("medium")  # Tensor Cores на RTX 4060 Ti
 
 
 def build_model(training_dataset) -> TemporalFusionTransformer:
@@ -34,22 +34,22 @@ def build_model(training_dataset) -> TemporalFusionTransformer:
         log_val_interval=1,
         reduce_on_plateau_patience=4,
     )
-    print(f"TFT parameters: {tft.size() / 1e3:.1f}k")
+    print(f"Параметров TFT: {tft.size() / 1e3:.1f}k")
     return tft
 
 
 def train(use_5_stations: bool | None = None) -> Path:
-    """Full training pipeline. Returns path to best checkpoint."""
+    """Полный pipeline обучения. Возвращает путь к лучшему чекпоинту."""
     MODELS_DIR.mkdir(exist_ok=True)
     LOGS_DIR.mkdir(exist_ok=True)
 
-    # Data — read CSV BEFORE any GPU ops, then cache for predict
+    # Данные — читаем CSV ДО операций на GPU, затем кэшируем для predict
     df = preprocess(load_raw(use_5_stations))
     df.to_parquet(DATA_CACHE, index=False)
-    print(f"Data cached: {DATA_CACHE}")
+    print(f"Данные закэшированы: {DATA_CACHE}")
     training, _, train_loader, val_loader = create_datasets(df)
 
-    # Model
+    # Модель
     tft = build_model(training)
 
     # Callbacks
@@ -64,7 +64,7 @@ def train(use_5_stations: bool | None = None) -> Path:
     early_stop_cb = EarlyStopping(monitor="val_loss", patience=8, mode="min", verbose=True)
     lr_monitor = LearningRateMonitor(logging_interval="epoch")
 
-    # Trainer
+    # Тренер
     trainer = L.Trainer(
         max_epochs=MAX_EPOCHS,
         accelerator="gpu" if torch.cuda.is_available() else "cpu",
@@ -76,13 +76,13 @@ def train(use_5_stations: bool | None = None) -> Path:
         log_every_n_steps=10,
     )
 
-    print(f"\nTraining on: {'GPU (' + torch.cuda.get_device_name(0) + ')' if torch.cuda.is_available() else 'CPU'}")
+    print(f"\nОбучение на: {'GPU (' + torch.cuda.get_device_name(0) + ')' if torch.cuda.is_available() else 'CPU'}")
     trainer.fit(tft, train_dataloaders=train_loader, val_dataloaders=val_loader)
 
     best_ckpt = Path(checkpoint_cb.best_model_path)
-    print(f"\nBest checkpoint: {best_ckpt}")
+    print(f"\nЛучший чекпоинт: {best_ckpt}")
 
-    # Save metadata alongside checkpoint
+    # Сохраняем метаданные рядом с чекпоинтом
     meta = {
         "best_checkpoint": str(best_ckpt),
         "n_stations": df["station_id"].nunique(),

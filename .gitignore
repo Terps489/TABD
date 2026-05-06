@@ -7,21 +7,27 @@ __pycache__/
 dist/
 build/
 
-# Models (large files)
+# Модели (большие файлы)
 models/*.ckpt
 models/*.pt
 models/*.bin
+models/*.parquet
+models/training_meta.json
 
-# Data (large CSV files - keep in original location)
+# Отладочные скрипты
+debug_*.py
+test_*.py
+
+# Данные (большие CSV — оставляем в исходной папке)
 data/*.csv
 data/*.parquet
 
-# Logs
+# Логи
 logs/
 lightning_logs/
 *.log
 
-# Outputs (generated)
+# Сгенерированные результаты
 outputs/
 
 # Jupyter
@@ -36,5 +42,5 @@ outputs/
 .DS_Store
 Thumbs.db
 
-# Claude memory
+# Память Claude
 .claude/

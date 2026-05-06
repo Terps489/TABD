@@ -1,4 +1,4 @@
-# PyTorch installed separately via setup_env.ps1 (CUDA-specific URL)
+# PyTorch устанавливается отдельно через setup_env.ps1 (специфичный CUDA URL)
 # torch==2.5.1+cu124
 # torchvision==0.20.1+cu124
 # torchaudio==2.5.1+cu124

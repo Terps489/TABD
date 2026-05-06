@@ -1,15 +1,15 @@
-# Data
+# Данные
 
-Data files are read directly from the original location:
+Файлы данных читаются напрямую из исходного расположения:
 `C:\Users\Admin\Desktop\ОбучениеМагистратура\ТАБД\Задание 6\`
 
-Do not copy CSV files here (they are large and excluded by .gitignore).
+Не копируйте сюда CSV-файлы (они большие и исключены через .gitignore).
 
-## Files used
+## Используемые файлы
 
-| File | Rows | Description |
+| Файл | Строк | Описание |
 |---|---|---|
-| `detailed_data.csv` | 219,000 | Full dataset: 25 stations × 365 days × 24h |
-| `5stations_data.csv` | 43,800 | 5-station subset for quick testing |
-| `stations_metadata.csv` | 25 | Static station characteristics |
-| `5stations_metadata.csv` | 5 | Metadata for 5-station subset |
+| `detailed_data.csv` | 219 000 | Полный датасет: 25 АЗС × 365 дней × 24 ч |
+| `5stations_data.csv` | 43 800 | Срез из 5 АЗС для быстрого тестирования |
+| `stations_metadata.csv` | 25 | Статические характеристики АЗС |
+| `5stations_metadata.csv` | 5 | Метаданные для среза из 5 АЗС |
