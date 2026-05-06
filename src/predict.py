@@ -92,35 +92,24 @@ def predict(
         df_out.to_csv(forecasts_dir / f"{target}.csv", index=False)
         print(f"  Сохранено: {target}.csv")
 
-    # Важность признаков
-    _save_feature_importance(model, training, forecasts_dir)
+    # Важность признаков (на val_loader — 25 сэмплов, ~10 секунд)
+    _save_feature_importance(model, val_loader, forecasts_dir)
 
     print(f"\nПрогнозы сохранены в {forecasts_dir}")
     return results
 
 
-def _save_feature_importance(model, training, out_dir: Path, n_samples: int = 500):
-    """Рассчитать важность признаков на подмножестве (а не на всей train-выборке).
+def _save_feature_importance(model, dataloader, out_dir: Path):
+    """Рассчитать важность признаков через интерпретацию модели TFT.
 
-    Полная train-выборка (~215K сэмплов) с mode='raw' слишком тяжёлая
-    и часто зависает. 500 сэмплов дают репрезентативный результат за <1 мин.
+    Используется validation-loader (25 сэмплов, по одному на АЗС) — этого
+    достаточно для оценки важности и занимает ~10 секунд. Полная train-выборка
+    (~215K сэмплов) с mode='raw' зависает на много минут.
     """
     try:
-        from torch.utils.data import Subset
-        import random
-
-        random.seed(42)
-        subset_size = min(n_samples, len(training))
-        indices = random.sample(range(len(training)), subset_size)
-        subset = Subset(training, indices)
-
-        loader = torch.utils.data.DataLoader(
-            subset, batch_size=64, num_workers=0, collate_fn=training._collate_fn
-        )
-
-        print(f"Расчёт важности признаков на {subset_size} сэмплах...")
+        print("Расчёт важности признаков...")
         interp = model.interpret_output(
-            model.predict(loader, mode="raw", return_x=True).output,
+            model.predict(dataloader, mode="raw", return_x=True).output,
             reduction="mean",
         )
         importance = {}
