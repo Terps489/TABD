@@ -18,6 +18,12 @@ models/training_meta.json
 debug_*.py
 test_*.py
 
+# Скриншоты
+*.png
+*.jpg
+*.jpeg
+Снимок*
+
 # Данные (большие CSV — оставляем в исходной папке)
 data/*.csv
 data/*.parquet
