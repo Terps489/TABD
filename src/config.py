@@ -1,8 +1,13 @@
+import os
 from pathlib import Path
 
 # ── Пути ───────────────────────────────────────────────────────────────────────
-DATA_DIR = Path(r"C:\Users\Admin\Desktop\ОбучениеМагистратура\ТАБД\Задание 6")
-PROJECT_DIR = Path(r"D:\project\TABD")
+PROJECT_DIR = Path(__file__).resolve().parent.parent
+
+# Путь к исходным CSV-данным. Настраивается через переменную окружения TABD_DATA_DIR.
+# По умолчанию — папка ./data в корне проекта.
+DATA_DIR = Path(os.environ.get("TABD_DATA_DIR", PROJECT_DIR / "data"))
+
 MODELS_DIR = PROJECT_DIR / "models"
 OUTPUTS_DIR = PROJECT_DIR / "outputs"
 LOGS_DIR = PROJECT_DIR / "logs"

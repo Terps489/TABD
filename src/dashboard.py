@@ -13,7 +13,7 @@ from dash import dcc, html, Input, Output, State
 import dash_bootstrap_components as dbc
 
 from src.config import (
-    DETAILED_DATA, FIVE_STATIONS_DATA, STATIONS_META,
+    DETAILED_DATA, FIVE_STATIONS_DATA, DATA_CACHE,
     OUTPUTS_DIR, MODELS_DIR, TARGETS,
     DASHBOARD_HOST, DASHBOARD_PORT, DASHBOARD_DEBUG, USE_5_STATIONS
 )
@@ -22,9 +22,20 @@ from src.predict import generate_recommendations
 warnings.filterwarnings("ignore")
 
 # ── Загрузка данных ────────────────────────────────────────────────────────────
-_data_path = FIVE_STATIONS_DATA if USE_5_STATIONS else DETAILED_DATA
-df_raw = pd.read_csv(_data_path, parse_dates=["timestamp"])
-df_meta = pd.read_csv(STATIONS_META)
+# Приоритет: parquet-кэш (создаётся при обучении) → CSV (если кэша нет).
+if DATA_CACHE.exists():
+    df_raw = pd.read_parquet(DATA_CACHE)
+    if "timestamp" in df_raw.columns:
+        df_raw["timestamp"] = pd.to_datetime(df_raw["timestamp"])
+else:
+    _csv_path = FIVE_STATIONS_DATA if USE_5_STATIONS else DETAILED_DATA
+    if not _csv_path.exists():
+        raise FileNotFoundError(
+            f"Нет ни кэша ({DATA_CACHE.name}), ни исходного CSV ({_csv_path}).\n"
+            "Запустите обучение или положите CSV-файлы в папку data/ "
+            "(или укажите путь через переменную окружения TABD_DATA_DIR)."
+        )
+    df_raw = pd.read_csv(_csv_path, parse_dates=["timestamp"])
 
 STATIONS = sorted(df_raw["station_name"].unique().tolist())
 FUEL_COLS = ["sales_AI92", "sales_AI95", "sales_AI98",
