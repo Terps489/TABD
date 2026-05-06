@@ -92,45 +92,47 @@ def predict(
         df_out.to_csv(forecasts_dir / f"{target}.csv", index=False)
         print(f"  Сохранено: {target}.csv")
 
-    # Важность признаков (на val_loader — 25 сэмплов, ~10 секунд)
-    _save_feature_importance(model, val_loader, forecasts_dir)
+    # Важность признаков (корреляция факторов с total_fuel_sales)
+    _save_feature_importance(df, forecasts_dir)
 
     print(f"\nПрогнозы сохранены в {forecasts_dir}")
     return results
 
 
-def _save_feature_importance(model, dataloader, out_dir: Path):
-    """Рассчитать важность признаков через интерпретацию модели TFT.
+def _save_feature_importance(df: pd.DataFrame, out_dir: Path):
+    """Важность признаков через абсолютную корреляцию с total_fuel_sales.
 
-    Используется validation-loader (25 сэмплов, по одному на АЗС) — этого
-    достаточно для оценки важности и занимает ~10 секунд. Полная train-выборка
-    (~215K сэмплов) с mode='raw' зависает на много минут.
+    Multi-target TFT в pytorch-forecasting 1.7 не поддерживает interpret_output,
+    поэтому используется простой и надёжный корреляционный подход — он
+    отражает линейную связь каждого фактора с целевой переменной.
     """
     try:
-        print("Расчёт важности признаков...")
-        interp = model.interpret_output(
-            model.predict(dataloader, mode="raw", return_x=True).output,
-            reduction="mean",
-        )
-        importance = {}
-        if "encoder_variables" in interp:
-            importance["encoder"] = {
-                k: float(v) for k, v in zip(
-                    interp["encoder_variables"]["labels"],
-                    interp["encoder_variables"]["values"]
-                )
-            }
-        if "decoder_variables" in interp:
-            importance["decoder"] = {
-                k: float(v) for k, v in zip(
-                    interp["decoder_variables"]["labels"],
-                    interp["decoder_variables"]["values"]
-                )
-            }
+        print("Расчёт важности признаков (корреляция)...")
+        candidate_features = [
+            "total_traffic", "traffic_Passengers_cars", "traffic_Truck",
+            "traffic_Truck_long", "traffic_Truck_short", "traffic_Transporter",
+            "temperature", "precipitation_mm", "wind_speed_ms", "visibility_km",
+            "is_snow", "is_rain", "is_fog",
+            "promotion_fuel_active", "promotion_shop_active", "ad_active",
+            "competitor_price_AI92", "competitor_price_AI95", "competitor_price_DT",
+            "price_AI92", "price_AI95",
+            "is_weekend", "is_holiday", "is_rush_hour", "is_night",
+            "hour_sin", "hour_cos", "day_sin", "day_cos", "month_sin", "month_cos",
+            "corporate_customer_ratio", "staff_engagement_score",
+            "customer_loyalty_score", "competitors_within_5km",
+        ]
+        target = "total_fuel_sales"
+        importance = {"encoder": {}}
+        for col in candidate_features:
+            if col in df.columns:
+                corr = df[col].corr(df[target])
+                if pd.notna(corr):
+                    importance["encoder"][col] = abs(float(corr))
+
         (out_dir / "feature_importance.json").write_text(
             json.dumps(importance, indent=2, ensure_ascii=False)
         )
-        print("Важность признаков сохранена.")
+        print(f"Важность признаков сохранена ({len(importance['encoder'])} факторов).")
     except Exception as e:
         print(f"Не удалось рассчитать важность признаков: {e}")
 
