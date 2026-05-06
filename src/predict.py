@@ -79,25 +79,30 @@ def predict(
         tp = preds[i].cpu().numpy()  # (n_samples, n_quantiles, pred_len) или (n_samples, pred_len, n_quantiles)
 
         # Определяем ось квантилей: дефолтный QuantileLoss даёт 7 квантилей [0.02,0.1,0.25,0.5,0.75,0.9,0.98]
+        # Приводим к форме (n_samples, pred_len) для каждого квантиля.
         if tp.ndim == 3 and tp.shape[1] == 7:
-            # (n_samples, n_quantiles, pred_len)
             p10, median, p90 = tp[:, 1, :], tp[:, 3, :], tp[:, 5, :]
         elif tp.ndim == 3 and tp.shape[2] == 7:
-            # (n_samples, pred_len, n_quantiles)
             p10, median, p90 = tp[:, :, 1], tp[:, :, 3], tp[:, :, 5]
         else:
-            # На всякий случай: используем как есть
-            p10 = median = p90 = tp
+            p10 = median = p90 = tp.reshape(tp.shape[0], -1)
 
-        df_out = pd.DataFrame({
-            "station_id": sample_station_ids,
-            "forecast_p10": p10.mean(axis=-1),
-            "forecast_median": median.mean(axis=-1),
-            "forecast_p90": p90.mean(axis=-1),
-        })
+        # Long-формат: одна строка на (станция, шаг прогноза)
+        n_samples, pred_len = p10.shape
+        rows = []
+        for s in range(n_samples):
+            for h in range(pred_len):
+                rows.append({
+                    "station_id": sample_station_ids[s],
+                    "step": h,
+                    "forecast_p10": float(p10[s, h]),
+                    "forecast_median": float(median[s, h]),
+                    "forecast_p90": float(p90[s, h]),
+                })
+        df_out = pd.DataFrame(rows)
         results[target] = df_out
         df_out.to_csv(forecasts_dir / f"{target}.csv", index=False)
-        print(f"  Сохранено: {target}.csv")
+        print(f"  Сохранено: {target}.csv ({n_samples} станций x {pred_len} часов)")
 
     # Важность признаков (корреляция факторов с total_fuel_sales)
     _save_feature_importance(df, forecasts_dir)

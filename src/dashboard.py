@@ -394,34 +394,49 @@ def update_forecast(station, target):
 
     df_fc = pd.read_csv(forecast_file, dtype={"station_id": str})
     station_id = str(df_raw[df_raw["station_name"] == station]["station_id"].iloc[0])
-    df_station = df_fc[df_fc["station_id"] == station_id]
+    df_station = df_fc[df_fc["station_id"] == station_id].sort_values("step").reset_index(drop=True)
 
-    d_actual = df_raw[df_raw["station_name"] == station].copy()
-    d_actual_last = d_actual.tail(len(df_station)).reset_index(drop=True)
+    d_actual = df_raw[df_raw["station_name"] == station].copy().sort_values("timestamp")
+    pred_len = len(df_station)
+    # Контекст: 48 часов факта перед прогнозом, потом сам прогноз
+    context_len = 48
+    d_context = d_actual.tail(context_len).reset_index(drop=True)
+
+    x_actual = list(range(-len(d_context) + 1, 1))  # отрицательные часы (история)
+    x_forecast = list(range(1, pred_len + 1))        # положительные часы (прогноз)
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(
-        y=d_actual_last[target].values if target in d_actual_last.columns else [],
-        name="Факт", line=dict(color="#17a2b8", width=2)
+        x=x_actual,
+        y=d_context[target].values if target in d_context.columns else [],
+        name="Факт (история)", mode="lines",
+        line=dict(color="#17a2b8", width=2)
     ))
-    if len(df_station):
+    if pred_len:
         fig.add_trace(go.Scatter(
-            y=df_station["forecast_median"].values,
-            name="Прогноз (медиана)", line=dict(color="#ffc107", width=2, dash="dash")
+            x=x_forecast, y=df_station["forecast_median"].values,
+            name="Прогноз (медиана)", mode="lines+markers",
+            line=dict(color="#ffc107", width=2, dash="dash")
         ))
         fig.add_trace(go.Scatter(
-            y=df_station["forecast_p90"].values,
-            name="P90", line=dict(color="rgba(255,99,71,0.3)", width=0),
-            fill=None
+            x=x_forecast, y=df_station["forecast_p90"].values,
+            name="P90", mode="lines",
+            line=dict(color="rgba(255,99,71,0.3)", width=0)
         ))
         fig.add_trace(go.Scatter(
-            y=df_station["forecast_p10"].values,
-            name="P10-P90 интервал", line=dict(color="rgba(255,99,71,0.3)", width=0),
-            fill="tonexty", fillcolor="rgba(255,99,71,0.1)"
+            x=x_forecast, y=df_station["forecast_p10"].values,
+            name="P10-P90 интервал", mode="lines",
+            line=dict(color="rgba(255,99,71,0.3)", width=0),
+            fill="tonexty", fillcolor="rgba(255,99,71,0.15)"
         ))
+        # Вертикальная линия "сейчас"
+        fig.add_vline(x=0, line=dict(color="#888", width=1, dash="dot"))
 
     target_label = target.replace("_", " ").upper()
-    fig.update_layout(**_dark_layout(f"Прогноз TFT: {target_label} — {station}"))
+    layout = _dark_layout(f"Прогноз TFT: {target_label} — {station}  (час 0 = текущий момент)")
+    layout["xaxis"] = dict(gridcolor="#333", title="Часы (отрицательные = история, положительные = прогноз)")
+    layout["yaxis"] = dict(gridcolor="#333", title="Литры/час" if "fuel" in target or "sales" in target else "Руб/час")
+    fig.update_layout(**layout)
     return fig, "Прогноз загружен успешно.", "success"
 
 
