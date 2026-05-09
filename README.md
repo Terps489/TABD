@@ -4,10 +4,6 @@
 сети АЗС, прогнозирование продаж топлива и сопутствующих товаров,
 интерактивный дашборд.
 
-> **Примечание для владельца репозитория:** персональные пути и команды для
-> конкретной машины-разработчика лежат в `LOCAL_SETUP.txt` (не зависит от
-> чужого окружения).
-
 ---
 
 ## Требования
@@ -23,10 +19,8 @@
 
 ## Установка (один раз)
 
-Клонировать репозиторий и установить окружение:
-
 ```powershell
-git clone https://github.com/Terps489/TABD.git
+git clone <repo-url>
 cd TABD
 powershell -ExecutionPolicy Bypass -File setup_env.ps1
 ```
@@ -95,7 +89,7 @@ python run.py --mode predict
 Использовать конкретный чекпоинт:
 
 ```powershell
-python run.py --mode predict --checkpoint "models\tft-epoch=04-val_loss=39.8722.ckpt"
+python run.py --mode predict --checkpoint "<путь к .ckpt>"
 ```
 
 ### 3. Запуск дашборда
@@ -175,8 +169,7 @@ TABD/
 ├── run.ps1              # обёртка PowerShell
 ├── setup_env.ps1        # установка окружения
 ├── requirements.txt
-├── DOCS.md              # описание показателей и вкладок дашборда
-└── LOCAL_SETUP.txt      # персональная "шпаргалка" для машины-разработчика
+└── DOCS.md              # описание показателей и вкладок дашборда
 ```
 
 ---
