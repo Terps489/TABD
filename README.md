@@ -4,20 +4,30 @@
 сети АЗС, прогнозирование продаж топлива и сопутствующих товаров,
 интерактивный дашборд.
 
+> **Примечание для владельца репозитория:** персональные пути и команды для
+> конкретной машины-разработчика лежат в `LOCAL_SETUP.txt` (не зависит от
+> чужого окружения).
+
 ---
 
 ## Требования
 
-- **Windows 10/11** + Anaconda
-- **NVIDIA GPU** с CUDA (тестировано на RTX 4060 Ti, CUDA 12.4)
-- ~15 ГБ свободного места
+- **Windows 10/11** + Anaconda / Miniconda
+- **NVIDIA GPU** с поддержкой CUDA 12.x (тестировано на RTX 4060 Ti, CUDA 12.4)
+- ~15 ГБ свободного места под окружение, чекпоинты и логи
+
+> На Linux/macOS установка должна сработать (см. `requirements.txt`), но
+> сценарий `setup_env.ps1` рассчитан на PowerShell.
 
 ---
 
 ## Установка (один раз)
 
+Клонировать репозиторий и установить окружение:
+
 ```powershell
-cd D:\project\TABD
+git clone https://github.com/Terps489/TABD.git
+cd TABD
 powershell -ExecutionPolicy Bypass -File setup_env.ps1
 ```
 
@@ -35,27 +45,28 @@ PyTorch 2.5.1 + CUDA 12.4 и все зависимости (~15-20 минут).
 2. **Любая другая папка** — укажите путь через переменную окружения:
 
 ```powershell
-$env:TABD_DATA_DIR = "D:\path\to\csv"
+$env:TABD_DATA_DIR = "<путь к папке с CSV>"
 ```
 
 После первого обучения данные кэшируются в `models/data_cache.parquet`,
-и для запуска дашборда CSV-файлы больше не требуются.
+и для запуска `predict` / `dashboard` CSV-файлы больше не требуются.
 
 ---
 
 ## Ручной запуск
 
-В PowerShell задайте путь к Python из conda-окружения (один раз на сессию):
+В PowerShell активируйте окружение (один раз на сессию):
 
 ```powershell
-$py = "C:\Users\Admin\anaconda3\envs\tabd_tft\python.exe"
-cd D:\project\TABD
+conda activate tabd_tft
 ```
+
+Все команды далее выполняются из корня проекта.
 
 ### 1. Обучение модели (~4-8 часов на полном датасете)
 
 ```powershell
-& $py run.py --mode train
+python run.py --mode train
 ```
 
 Создаст:
@@ -67,13 +78,13 @@ cd D:\project\TABD
 Быстрый тест на 5 АЗС:
 
 ```powershell
-& $py run.py --mode train --quick
+python run.py --mode train --quick
 ```
 
 ### 2. Генерация прогнозов (нужна обученная модель)
 
 ```powershell
-& $py run.py --mode predict
+python run.py --mode predict
 ```
 
 Использует **лучший чекпоинт** из `models/training_meta.json` и кэш
@@ -84,13 +95,13 @@ cd D:\project\TABD
 Использовать конкретный чекпоинт:
 
 ```powershell
-& $py run.py --mode predict --checkpoint "models\tft-epoch=04-val_loss=39.8722.ckpt"
+python run.py --mode predict --checkpoint "models\tft-epoch=04-val_loss=39.8722.ckpt"
 ```
 
 ### 3. Запуск дашборда
 
 ```powershell
-& $py run.py --mode dashboard
+python run.py --mode dashboard
 ```
 
 Открыть в браузере: **http://localhost:8050**
@@ -102,10 +113,28 @@ cd D:\project\TABD
 ### 4. Полный pipeline
 
 ```powershell
-& $py run.py --mode all
+python run.py --mode all
 ```
 
 Эквивалент `train` → `predict` → `dashboard`.
+
+---
+
+## Если окружение не активировано
+
+Можно вызывать Python из conda-окружения напрямую, без `conda activate`:
+
+```powershell
+$py = "$env:USERPROFILE\anaconda3\envs\tabd_tft\python.exe"
+& $py run.py --mode dashboard
+```
+
+Замените `$env:USERPROFILE\anaconda3` на путь к вашей установке Anaconda /
+Miniconda, если он отличается. Узнать путь к окружению:
+
+```powershell
+conda env list
+```
 
 ---
 
@@ -115,11 +144,11 @@ cd D:\project\TABD
 
 1. **Прогнозы** — будут сгенерированы из лучшего чекпоинта:
    ```powershell
-   & $py run.py --mode predict
+   python run.py --mode predict
    ```
 2. **Дашборд** — покажет графики прогнозов из `outputs/forecasts/`:
    ```powershell
-   & $py run.py --mode dashboard
+   python run.py --mode dashboard
    ```
 3. **Дообучение** — запустить обучение заново; ckpt-файлы сохраняются
    автоматически и `last.ckpt` можно использовать как стартовую точку
@@ -137,6 +166,7 @@ TABD/
 │   ├── train.py         # обучение TFT с GPU, чекпоинты, early stopping
 │   ├── predict.py       # инференс, квантильные прогнозы, важность факторов
 │   └── dashboard.py     # Dash-дашборд (5 вкладок)
+├── assets/style.css     # CSS для тёмной темы дашборда
 ├── data/                # CSV-файлы (положить сюда или указать TABD_DATA_DIR)
 ├── models/              # чекпоинты + parquet-кэш
 ├── outputs/forecasts/   # CSV с прогнозами по каждому таргету
@@ -144,7 +174,9 @@ TABD/
 ├── run.py               # главная точка входа
 ├── run.ps1              # обёртка PowerShell
 ├── setup_env.ps1        # установка окружения
-└── requirements.txt
+├── requirements.txt
+├── DOCS.md              # описание показателей и вкладок дашборда
+└── LOCAL_SETUP.txt      # персональная "шпаргалка" для машины-разработчика
 ```
 
 ---
@@ -154,7 +186,7 @@ TABD/
 ```python
 USE_5_STATIONS = False          # True для быстрого теста на 5 АЗС
 MAX_PREDICTION_LENGTH = 24      # горизонт прогноза (часов)
-MAX_ENCODER_LENGTH = 7 * 24    # окно контекста (1 неделя)
+MAX_ENCODER_LENGTH = 7 * 24     # окно контекста (1 неделя)
 BATCH_SIZE = 64
 MAX_EPOCHS = 30                 # с early stopping (patience=8)
 HIDDEN_SIZE = 64                # увеличить до 128 для лучшего качества
@@ -180,17 +212,17 @@ LEARNING_RATE = 3e-3
   pytorch-forecasting 1.7.
 - Лучший checkpoint автоматически записывается в
   `models/training_meta.json` — именно его подхватывает `predict`.
+- Запуск через системный `py` лаунчер не работает (это Windows Store stub
+  без зависимостей) — используйте `python` из активированного `tabd_tft`
+  или прямой путь к `python.exe` окружения.
 
 ---
 
 ## Полезное
 
 ```powershell
-# Активировать окружение в текущем PS
-conda activate tabd_tft
-
 # Проверить GPU
-& $py -c "import torch; print(torch.cuda.get_device_name(0))"
+python -c "import torch; print(torch.cuda.get_device_name(0))"
 
 # Логи обучения
 ls logs\tft\version_*\metrics.csv

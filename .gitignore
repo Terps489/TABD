@@ -50,3 +50,6 @@ Thumbs.db
 
 # Память Claude
 .claude/
+
+# Персональные пути
+LOCAL_SETUP.txt
