@@ -42,11 +42,38 @@ TIME_VARYING_UNKNOWN_REALS = [
 
 
 def load_raw(use_5_stations: bool | None = None) -> pd.DataFrame:
-    """Загрузить CSV и вернуть исходный DataFrame."""
+    """Загрузить CSV и вернуть исходный DataFrame.
+
+    Логика поиска файла:
+    1. Файл в DATA_DIR (стандартный путь).
+    2. Если его там нет — пробуем `DATA_DIR/sample/<имя>` (закоммиченный
+       sample), чтобы `--quick` работал сразу после клона репозитория.
+    3. Если и в sample нет — понятная ошибка с подсказками.
+    """
     if use_5_stations is None:
         use_5_stations = USE_5_STATIONS
     path = FIVE_STATIONS_DATA if use_5_stations else DETAILED_DATA
-    print(f"Загрузка: {path.name}  ({'5 АЗС' if use_5_stations else '25 АЗС'})")
+
+    if not path.exists():
+        sample_candidate = path.parent / "sample" / path.name
+        if sample_candidate.exists():
+            print(f"[!] {path.name} не найден в {path.parent}; "
+                  f"использую встроенный sample ({sample_candidate}).")
+            path = sample_candidate
+        else:
+            raise FileNotFoundError(
+                f"Не найден {path.name} в {path.parent} и в "
+                f"{path.parent / 'sample'}.\n"
+                f"Варианты:\n"
+                f"  - Положить CSV в {path.parent}/\n"
+                f"  - Сгенерировать синтетику: "
+                f"python scripts/make_synthetic.py "
+                f"--out {path.parent / 'sample'}\n"
+                f"  - Указать свою папку: $env:TABD_DATA_DIR = \"<путь>\""
+            )
+
+    print(f"Загрузка: {path.name}  ({'5 АЗС' if use_5_stations else '25 АЗС'}) "
+          f"из {path.parent}")
     df = pd.read_csv(path, parse_dates=["timestamp"])
     print(f"  Строк: {len(df):,}  |  Колонок: {df.shape[1]}")
     return df

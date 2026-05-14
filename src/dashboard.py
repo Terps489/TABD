@@ -1,6 +1,9 @@
 """Интерактивный Dash-дашборд для TFT-анализа сети АЗС Татнефть."""
+import base64
+import io
 import json
 import warnings
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -13,12 +16,14 @@ from dash import dcc, html, Input, Output, State, dash_table
 import dash_bootstrap_components as dbc
 
 from src.config import (
-    DETAILED_DATA, FIVE_STATIONS_DATA, DATA_CACHE,
+    DETAILED_DATA, FIVE_STATIONS_DATA, STATIONS_META, DATA_DIR, DATA_CACHE,
     OUTPUTS_DIR, MODELS_DIR, PROJECT_DIR, TARGETS,
     DASHBOARD_HOST, DASHBOARD_PORT, DASHBOARD_DEBUG, USE_5_STATIONS,
     FORECAST_CHART_HISTORY_HOURS, FORECAST_CHART_FUTURE_HOURS,
 )
 from src.predict import generate_recommendations, forecast_extended
+from src.metrics import load_metrics, METRICS_DIR
+from src import training_runner
 
 warnings.filterwarnings("ignore")
 
@@ -358,7 +363,222 @@ app.layout = dbc.Container(fluid=True, children=[
             dbc.Row([dbc.Col(dcc.Graph(id="factor-corr-heatmap"), width=12)]),
         ]),
 
-        # ── Вкладка 6: О проекте ───────────────────────────────────────────────
+        # ── Вкладка 6: Метрики качества ────────────────────────────────────────
+        dbc.Tab(label="Метрики", children=[
+            dcc.Store(id="metrics-refresh-trigger"),
+            dbc.Row([
+                dbc.Col([
+                    dbc.Card(style=CARD, children=[
+                        html.H5("Сравнение моделей: macro-avg по 9 таргетам",
+                                style={"color": "#17a2b8"}),
+                        html.Small(
+                            "Метрики считаются на одной и той же 24-часовой "
+                            "валидационной выборке для TFT (медиана) и baseline-моделей. "
+                            "Macro-avg — среднее значение метрики по 9 таргетам. "
+                            "Чем меньше — тем лучше.",
+                            style={"color": "#888", "display": "block",
+                                   "marginBottom": "12px"},
+                        ),
+                        dcc.Graph(id="metrics-macro-bar"),
+                    ])
+                ], width=12),
+            ], className="mt-3"),
+            dbc.Row([
+                dbc.Col([
+                    dbc.Card(style=CARD, children=[
+                        html.H5("MAE / RMSE / MAPE / SMAPE по каждому таргету",
+                                style={"color": "#17a2b8"}),
+                        dbc.Row([
+                            dbc.Col([
+                                html.Label("Модель", style={"color": "#aaa"}),
+                                dcc.Dropdown(
+                                    id="metrics-model-select",
+                                    clearable=False,
+                                    style={"backgroundColor": "#333"},
+                                ),
+                            ], width=4),
+                            dbc.Col([
+                                html.Label("АЗС (опционально)",
+                                           style={"color": "#aaa"}),
+                                dcc.Dropdown(
+                                    id="metrics-station-select",
+                                    placeholder="Все АЗС (агрегат)",
+                                    style={"backgroundColor": "#333"},
+                                ),
+                            ], width=4),
+                            dbc.Col([
+                                html.Label(" ", style={"color": "#aaa"}),
+                                dbc.Button("Обновить",
+                                           id="metrics-refresh-btn",
+                                           color="info", className="w-100"),
+                            ], width=4,
+                                className="d-flex flex-column justify-content-end"),
+                        ], className="mb-3"),
+                        html.Div(id="metrics-table-output"),
+                    ])
+                ], width=12),
+            ]),
+            dbc.Row([
+                dbc.Col([
+                    dbc.Card(style=CARD, children=[
+                        html.H5("SMAPE по таргетам × моделям",
+                                style={"color": "#17a2b8"}),
+                        dcc.Graph(id="metrics-heatmap"),
+                    ])
+                ], width=12),
+            ]),
+        ]),
+
+        # ── Вкладка 7: Настройки (полный pipeline из UI) ───────────────────────
+        dbc.Tab(label="Настройки", children=[
+            dcc.Interval(id="settings-poll", interval=2000, disabled=True),
+            dcc.Store(id="settings-running", data=False),
+
+            dbc.Row([
+                dbc.Col([
+                    dbc.Card(style=CARD, children=[
+                        html.H5("1. Загрузка исходных CSV",
+                                style={"color": "#17a2b8"}),
+                        html.Small(
+                            "Принимаем два файла того же формата, что и "
+                            "detailed_data.csv / stations_metadata.csv. "
+                            "Файлы сохранятся в data/. Если данные уже лежат "
+                            "в data/ — этот шаг можно пропустить.",
+                            style={"color": "#888", "display": "block",
+                                   "marginBottom": "12px"},
+                        ),
+                        dbc.Row([
+                            dbc.Col([
+                                html.Label("Почасовые данные (detailed_data.csv)",
+                                           style={"color": "#aaa"}),
+                                dcc.Upload(
+                                    id="upload-detailed",
+                                    children=html.Div([
+                                        "Перетащите CSV сюда или ",
+                                        html.A("выберите файл",
+                                               style={"color": "#17a2b8"}),
+                                    ]),
+                                    style={
+                                        "width": "100%", "minHeight": "60px",
+                                        "lineHeight": "60px", "borderWidth": "1px",
+                                        "borderStyle": "dashed", "borderRadius": "8px",
+                                        "textAlign": "center", "color": "#ccc",
+                                    },
+                                    multiple=False,
+                                ),
+                                html.Div(id="upload-detailed-status",
+                                         style={"color": "#28a745", "marginTop": "6px"}),
+                            ], width=6),
+                            dbc.Col([
+                                html.Label("Метаданные АЗС (stations_metadata.csv)",
+                                           style={"color": "#aaa"}),
+                                dcc.Upload(
+                                    id="upload-meta",
+                                    children=html.Div([
+                                        "Перетащите CSV сюда или ",
+                                        html.A("выберите файл",
+                                               style={"color": "#17a2b8"}),
+                                    ]),
+                                    style={
+                                        "width": "100%", "minHeight": "60px",
+                                        "lineHeight": "60px", "borderWidth": "1px",
+                                        "borderStyle": "dashed", "borderRadius": "8px",
+                                        "textAlign": "center", "color": "#ccc",
+                                    },
+                                    multiple=False,
+                                ),
+                                html.Div(id="upload-meta-status",
+                                         style={"color": "#28a745", "marginTop": "6px"}),
+                            ], width=6),
+                        ]),
+                    ])
+                ], width=12),
+            ], className="mt-3"),
+
+            dbc.Row([
+                dbc.Col([
+                    dbc.Card(style=CARD, children=[
+                        html.H5("2. Запуск задачи",
+                                style={"color": "#17a2b8"}),
+                        html.Small(
+                            "Train: 5–60 мин (зависит от размера и GPU). "
+                            "Predict: 1–3 мин. Evaluate: < 1 мин. "
+                            "Запускается в фоне как отдельный процесс — "
+                            "дашборд остаётся отзывчивым.",
+                            style={"color": "#888", "display": "block",
+                                   "marginBottom": "12px"},
+                        ),
+                        dbc.Row([
+                            dbc.Col([
+                                dbc.Checklist(
+                                    id="settings-quick",
+                                    options=[{
+                                        "label": " Быстрый режим (5 АЗС, "
+                                                 "только для train)",
+                                        "value": "quick",
+                                    }],
+                                    value=[],
+                                    style={"color": "#ccc"},
+                                ),
+                            ], width=12),
+                        ], className="mb-2"),
+                        dbc.Row([
+                            dbc.Col(dbc.Button(
+                                "Обучить модель",
+                                id="btn-train",
+                                color="info", className="w-100",
+                            ), width=3),
+                            dbc.Col(dbc.Button(
+                                "Сгенерировать прогнозы",
+                                id="btn-predict",
+                                color="info", outline=True, className="w-100",
+                            ), width=3),
+                            dbc.Col(dbc.Button(
+                                "Только метрики",
+                                id="btn-evaluate",
+                                color="secondary", outline=True, className="w-100",
+                            ), width=3),
+                            dbc.Col(dbc.Button(
+                                "Остановить",
+                                id="btn-stop",
+                                color="danger", outline=True, className="w-100",
+                            ), width=3),
+                        ]),
+                    ])
+                ], width=12),
+            ]),
+
+            dbc.Row([
+                dbc.Col([
+                    dbc.Card(style=CARD, children=[
+                        html.H5("3. Статус и журнал",
+                                style={"color": "#17a2b8"}),
+                        html.Div(id="settings-status",
+                                 children=dbc.Alert("Готов к запуску.",
+                                                    color="secondary",
+                                                    className="mb-2")),
+                        html.Pre(
+                            id="settings-log",
+                            style={
+                                "backgroundColor": "#0f0f18",
+                                "color": "#d4d4d4",
+                                "padding": "12px",
+                                "borderRadius": "6px",
+                                "maxHeight": "360px",
+                                "overflow": "auto",
+                                "fontSize": "12px",
+                                "fontFamily": "Consolas, monospace",
+                                "border": "1px solid #333",
+                                "whiteSpace": "pre-wrap",
+                            },
+                            children="(журнал пуст)",
+                        ),
+                    ])
+                ], width=12),
+            ]),
+        ]),
+
+        # ── Вкладка 8: О проекте ───────────────────────────────────────────────
         dbc.Tab(label="О проекте", children=[
             dbc.Row([
                 dbc.Col([
@@ -370,7 +590,9 @@ app.layout = dbc.Container(fluid=True, children=[
                             "На синтетическом датасете 25 АЗС (8760 часов = 1 год) обучена "
                             "Temporal Fusion Transformer — современная attention-based модель "
                             "временных рядов, дающая квантильный прогноз на 24 часа вперёд "
-                            "одновременно по 9 показателям.",
+                            "одновременно по 9 показателям. Качество модели измеряется "
+                            "MAE / RMSE / MAPE / SMAPE по каждому таргету и каждой АЗС и "
+                            "сравнивается с двумя naive baselines.",
                             style={"color": "#ccc", "fontSize": "15px"}),
                     ])
                 ], width=12),
@@ -406,6 +628,18 @@ app.layout = dbc.Container(fluid=True, children=[
                                 "автоматические инсайты (топ-5 факторов + что с ними делать), "
                                 "топ-10 АЗС, важность факторов, эффект акций и "
                                 "корреляционная матрица 9 таргетов × 12 факторов."],
+                                style={"color": "#ccc", "marginBottom": "8px"}),
+                            html.Li([html.B("Метрики — "),
+                                "сравнение TFT с baseline-моделями (naive_yesterday, "
+                                "seasonal_naive_week) на одной и той же 24-часовой "
+                                "валидации: MAE / RMSE / MAPE / SMAPE по каждому из "
+                                "9 таргетов и по каждой АЗС, macro-avg, heatmap SMAPE."],
+                                style={"color": "#ccc", "marginBottom": "8px"}),
+                            html.Li([html.B("Настройки — "),
+                                "полный pipeline из UI: загрузка CSV (dcc.Upload), "
+                                "запуск Train / Predict / Evaluate в фоновом subprocess, "
+                                "статус и хвост лога в реальном времени. Дашборд "
+                                "остаётся отзывчивым во время длинных задач."],
                                 style={"color": "#ccc"}),
                         ]),
                     ])
@@ -470,7 +704,17 @@ app.layout = dbc.Container(fluid=True, children=[
                         html.P([
                             html.B("Стек: "),
                             "PyTorch 2.5.1 + CUDA 12.4, Lightning 2.6, "
-                            "Dash 4 + Bootstrap DARKLY, Plotly.",
+                            "Dash 4 + Bootstrap DARKLY, Plotly. "
+                            "Baselines: numpy lag (24 ч / 168 ч).",
+                        ], style={"color": "#ccc", "marginBottom": "6px"}),
+                        html.P([
+                            html.B("Данные: "),
+                            "полный 25-АЗС-датасет лежит вне репозитория; "
+                            "в git закоммичен маленький обезличенный sample "
+                            "(", html.Code("data/sample/"), ", 2 АЗС × 14 дней) — "
+                            "проект запускается сразу после клонирования. "
+                            "Полную синтетику за 2024 год можно сгенерировать "
+                            "скриптом ", html.Code("scripts/make_synthetic.py"), ".",
                         ], style={"color": "#ccc", "marginBottom": "6px"}),
                         html.P([
                             html.B("Документация: "),
@@ -918,6 +1162,297 @@ def update_recommendations(start, end):
     fig_top.update_layout(**_dark_layout("Топ-10 АЗС по продажам"))
 
     return rec_items, fig_top
+
+
+# ── Callbacks: Метрики ─────────────────────────────────────────────────────────
+def _metric_color(model_name: str) -> str:
+    """Стабильные цвета моделей: TFT выделяем, baselines — серые/коричневые."""
+    return {
+        "TFT": "#17a2b8",
+        "naive_yesterday": "#aaaaaa",
+        "seasonal_naive_week": "#8c7a6b",
+    }.get(model_name, "#888888")
+
+
+@app.callback(
+    Output("metrics-model-select", "options"),
+    Output("metrics-model-select", "value"),
+    Output("metrics-station-select", "options"),
+    Input("metrics-refresh-btn", "n_clicks"),
+    Input("metrics-refresh-trigger", "data"),
+)
+def init_metrics_filters(_n, _trig):
+    df_m = load_metrics()
+    if df_m.empty:
+        return [], None, []
+    models = sorted(df_m["model"].unique().tolist())
+    stations = sorted(s for s in df_m["station_id"].unique() if s != "ALL")
+    return (
+        [{"label": m, "value": m} for m in models],
+        "TFT" if "TFT" in models else models[0],
+        [{"label": s, "value": s} for s in stations],
+    )
+
+
+@app.callback(
+    Output("metrics-macro-bar", "figure"),
+    Input("metrics-refresh-btn", "n_clicks"),
+    Input("metrics-refresh-trigger", "data"),
+)
+def update_metrics_macro(_n, _trig):
+    df_m = load_metrics()
+    if df_m.empty:
+        fig = go.Figure()
+        fig.add_annotation(text="Метрики не найдены. Запустите 'evaluate' "
+                                "(во вкладке Настройки) после обучения.",
+                           xref="paper", yref="paper", x=0.5, y=0.5,
+                           showarrow=False, font=dict(size=14, color="#aaa"))
+        fig.update_layout(**_dark_layout("Сравнение моделей"))
+        return fig
+
+    agg = df_m[df_m["station_id"] == "ALL"].groupby("model")[
+        ["mae", "rmse", "mape", "smape"]
+    ].mean().reset_index()
+    metrics_to_plot = ["mae", "rmse", "mape", "smape"]
+    fig = make_subplots(
+        rows=1, cols=len(metrics_to_plot),
+        subplot_titles=[m.upper() for m in metrics_to_plot],
+        horizontal_spacing=0.06,
+    )
+    for j, metric in enumerate(metrics_to_plot, start=1):
+        for _, row in agg.sort_values(metric).iterrows():
+            fig.add_trace(go.Bar(
+                x=[row["model"]], y=[row[metric]],
+                name=row["model"], showlegend=(j == 1),
+                marker_color=_metric_color(row["model"]),
+                text=f"{row[metric]:.2f}", textposition="outside",
+            ), row=1, col=j)
+    layout = _dark_layout("Сравнение моделей: macro-avg по 9 таргетам "
+                           "(меньше — лучше)")
+    layout["showlegend"] = True
+    layout["height"] = 360
+    fig.update_layout(**layout)
+    for j in range(1, len(metrics_to_plot) + 1):
+        fig.update_xaxes(showticklabels=False, row=1, col=j)
+        fig.update_yaxes(gridcolor="#333", row=1, col=j)
+    return fig
+
+
+@app.callback(
+    Output("metrics-table-output", "children"),
+    Input("metrics-model-select", "value"),
+    Input("metrics-station-select", "value"),
+    Input("metrics-refresh-btn", "n_clicks"),
+    Input("metrics-refresh-trigger", "data"),
+)
+def update_metrics_table(model, station, _n, _trig):
+    df_m = load_metrics()
+    if df_m.empty or not model:
+        return dbc.Alert("Метрики не найдены.", color="warning")
+
+    rows = df_m[df_m["model"] == model]
+    rows = rows[rows["station_id"] == (station if station else "ALL")]
+    if rows.empty:
+        return dbc.Alert(
+            f"Нет данных для {model} / {station or 'ALL'}.", color="warning"
+        )
+
+    out = rows[["target", "n", "mae", "rmse", "mape", "smape"]].copy()
+    out["target"] = out["target"].str.replace("_", " ").str.upper()
+    for c in ("mae", "rmse"):
+        out[c] = out[c].round(2)
+    for c in ("mape", "smape"):
+        out[c] = out[c].round(2).astype(str) + " %"
+
+    return dash_table.DataTable(
+        data=out.to_dict("records"),
+        columns=[{"name": c.upper(), "id": c} for c in out.columns],
+        page_size=10, sort_action="native",
+        style_table={"overflowX": "auto"},
+        style_header={
+            "backgroundColor": "#1e1e2e", "color": "#17a2b8",
+            "fontWeight": "bold", "border": "1px solid #333",
+        },
+        style_cell={
+            "backgroundColor": "#1a1a2e", "color": "#ccc",
+            "textAlign": "center", "padding": "8px",
+            "border": "1px solid #333", "fontFamily": "monospace",
+        },
+        style_data_conditional=[
+            {"if": {"row_index": "odd"}, "backgroundColor": "#22223a"},
+        ],
+    )
+
+
+@app.callback(
+    Output("metrics-heatmap", "figure"),
+    Input("metrics-refresh-btn", "n_clicks"),
+    Input("metrics-refresh-trigger", "data"),
+)
+def update_metrics_heatmap(_n, _trig):
+    df_m = load_metrics()
+    if df_m.empty:
+        fig = go.Figure()
+        fig.update_layout(**_dark_layout("SMAPE: модель × таргет"))
+        return fig
+    pivot = df_m[df_m["station_id"] == "ALL"].pivot_table(
+        index="target", columns="model", values="smape",
+    )
+    target_labels = [t.replace("_", " ").upper() for t in pivot.index]
+    fig = go.Figure(go.Heatmap(
+        z=pivot.values, x=pivot.columns.tolist(), y=target_labels,
+        colorscale="RdYlGn_r", colorbar=dict(title="SMAPE %"),
+        hovertemplate="%{y}<br>%{x}: %{z:.2f}%<extra></extra>",
+        text=np.round(pivot.values, 1),
+        texttemplate="%{text}", textfont={"size": 11},
+    ))
+    fig.update_layout(**_dark_layout("SMAPE по таргетам × моделям "
+                                      "(зелёное лучше)"))
+    return fig
+
+
+# ── Callbacks: Настройки ───────────────────────────────────────────────────────
+def _save_uploaded_csv(contents: str, default_name: str) -> tuple[bool, str]:
+    """Декодирует base64-payload из dcc.Upload, сохраняет в data/."""
+    if not contents:
+        return False, "пусто"
+    try:
+        _, b64 = contents.split(",", 1)
+        raw = base64.b64decode(b64)
+        # Лёгкая валидация — должно быть похоже на CSV (читаемо как DataFrame).
+        pd.read_csv(io.BytesIO(raw), nrows=5)
+    except Exception as e:
+        return False, f"не CSV: {e}"
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    out = DATA_DIR / default_name
+    out.write_bytes(raw)
+    return True, f"сохранено: {out.name} ({len(raw)/1024:.1f} КБ)"
+
+
+@app.callback(
+    Output("upload-detailed-status", "children"),
+    Input("upload-detailed", "contents"),
+    State("upload-detailed", "filename"),
+    prevent_initial_call=True,
+)
+def handle_upload_detailed(contents, filename):
+    ok, msg = _save_uploaded_csv(contents, "detailed_data.csv")
+    return ("✓ " if ok else "✗ ") + msg
+
+
+@app.callback(
+    Output("upload-meta-status", "children"),
+    Input("upload-meta", "contents"),
+    State("upload-meta", "filename"),
+    prevent_initial_call=True,
+)
+def handle_upload_meta(contents, filename):
+    ok, msg = _save_uploaded_csv(contents, "stations_metadata.csv")
+    return ("✓ " if ok else "✗ ") + msg
+
+
+@app.callback(
+    Output("settings-running", "data", allow_duplicate=True),
+    Output("settings-status", "children", allow_duplicate=True),
+    Input("btn-train", "n_clicks"),
+    Input("btn-predict", "n_clicks"),
+    Input("btn-evaluate", "n_clicks"),
+    Input("btn-stop", "n_clicks"),
+    State("settings-quick", "value"),
+    prevent_initial_call=True,
+)
+def handle_run_button(n_t, n_p, n_e, n_s, quick_val):
+    trig = dash.callback_context.triggered_id
+    if trig is None:
+        raise dash.exceptions.PreventUpdate
+
+    quick = "quick" in (quick_val or [])
+
+    try:
+        if trig == "btn-stop":
+            stopped = training_runner.stop()
+            msg = "Остановлено пользователем." if stopped else "Активных задач нет."
+            return False, dbc.Alert(msg, color="warning", className="mb-2")
+
+        mode_map = {"btn-train": "train", "btn-predict": "predict",
+                    "btn-evaluate": "evaluate"}
+        mode = mode_map.get(trig)
+        if mode is None:
+            raise dash.exceptions.PreventUpdate
+
+        # Если предыдущий процесс закончился — очищаем state, чтобы не блокировать.
+        if not training_runner.is_running():
+            training_runner.clear()
+
+        state = training_runner.start(mode, quick=quick)
+        started = datetime.fromtimestamp(state.started_at).strftime("%H:%M:%S")
+        return True, dbc.Alert(
+            f"Запущено: {mode}{' --quick' if state.quick else ''} "
+            f"(PID {state.pid}, старт {started})",
+            color="info", className="mb-2",
+        )
+    except RuntimeError as e:
+        return True, dbc.Alert(str(e), color="warning", className="mb-2")
+    except Exception as e:
+        return False, dbc.Alert(f"Ошибка запуска: {e}",
+                                  color="danger", className="mb-2")
+
+
+@app.callback(
+    Output("settings-poll", "disabled"),
+    Input("settings-running", "data"),
+)
+def toggle_poll(running):
+    return not bool(running)
+
+
+@app.callback(
+    Output("settings-log", "children"),
+    Output("settings-status", "children", allow_duplicate=True),
+    Output("settings-running", "data", allow_duplicate=True),
+    Output("metrics-refresh-trigger", "data"),
+    Input("settings-poll", "n_intervals"),
+    prevent_initial_call=True,
+)
+def poll_status(_n):
+    status = training_runner.get_status()
+    state = status.get("state") or {}
+    log = training_runner.tail_log(200) or "(журнал пуст)"
+
+    if status["running"]:
+        started = state.get("started_at")
+        started_s = (datetime.fromtimestamp(started).strftime("%H:%M:%S")
+                     if started else "—")
+        alert = dbc.Alert(
+            f"Выполняется: {state.get('mode')} "
+            f"{'--quick' if state.get('quick') else ''} "
+            f"(PID {state.get('pid')}, старт {started_s})",
+            color="info", className="mb-2",
+        )
+        # Обновлять метрики пока не нужно — задача не завершилась.
+        return log, alert, True, dash.no_update
+
+    finished = state.get("finished_at")
+    if finished is None:
+        return log, dbc.Alert("Готов к запуску.", color="secondary",
+                              className="mb-2"), False, dash.no_update
+
+    exit_code = state.get("exit_code")
+    finished_s = datetime.fromtimestamp(finished).strftime("%H:%M:%S")
+    if exit_code in (0, None):
+        alert = dbc.Alert(
+            f"Готово: {state.get('mode')} завершено в {finished_s}.",
+            color="success", className="mb-2",
+        )
+        return log, alert, False, datetime.now().isoformat()
+
+    color = "warning" if exit_code == -2 else "danger"
+    alert = dbc.Alert(
+        f"Завершено с кодом {exit_code} (mode={state.get('mode')}, "
+        f"{finished_s}). Подробности в журнале.",
+        color=color, className="mb-2",
+    )
+    return log, alert, False, datetime.now().isoformat()
 
 
 def run_dashboard():

@@ -1,5 +1,6 @@
 """Обучение TFT с сохранением чекпоинтов и early stopping."""
 import json
+import os
 import warnings
 from pathlib import Path
 
@@ -43,9 +44,13 @@ def train(use_5_stations: bool | None = None) -> Path:
     MODELS_DIR.mkdir(exist_ok=True)
     LOGS_DIR.mkdir(exist_ok=True)
 
-    # Данные — читаем CSV ДО операций на GPU, затем кэшируем для predict
+    # Данные — читаем CSV ДО операций на GPU, затем кэшируем для predict.
+    # Запись атомарная: пишем во временный файл рядом и переименовываем —
+    # если процесс прервётся посреди записи, основной cache не будет битым.
     df = preprocess(load_raw(use_5_stations))
-    df.to_parquet(DATA_CACHE, index=False)
+    tmp_cache = DATA_CACHE.with_suffix(".parquet.tmp")
+    df.to_parquet(tmp_cache, index=False)
+    os.replace(tmp_cache, DATA_CACHE)
     print(f"Данные закэшированы: {DATA_CACHE}")
     training, _, train_loader, val_loader = create_datasets(df)
 

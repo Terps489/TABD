@@ -11,6 +11,26 @@
 
 Сами CSV-файлы не попадают в git (исключены через `.gitignore`).
 
+## Sample dataset
+
+В папке `data/sample/` лежит **маленький обезличенный пример** (2 АЗС × 14 дней,
+672 строки) — он включён в git, чтобы проект можно было запустить сразу после
+клонирования без полного датасета. Имена АЗС обезличены (`Station_A`,
+`Station_B`).
+
+Запуск на sample:
+
+```powershell
+$env:TABD_DATA_DIR = "data/sample"
+python run.py --mode train --quick
+```
+
+Регенерация sample из полного датасета:
+
+```powershell
+python scripts/make_sample.py --source "C:/path/to/full/csv"
+```
+
 ## Альтернативное расположение
 
 Если CSV-файлы лежат в другой папке, укажите путь через переменную окружения

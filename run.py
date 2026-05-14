@@ -4,6 +4,7 @@
 Использование:
     python run.py --mode train           # Обучить модель TFT
     python run.py --mode predict         # Сгенерировать прогнозы (нужна обученная модель)
+    python run.py --mode evaluate        # Только метрики (TFT + baselines), без перегенерации прогнозов
     python run.py --mode dashboard       # Запустить дашборд (только данные, без модели)
     python run.py --mode all             # Обучение → прогнозы → дашборд
     python run.py --mode train --quick   # Быстрый тест на 5 АЗС
@@ -16,7 +17,7 @@ from pathlib import Path
 def parse_args():
     parser = argparse.ArgumentParser(description="TABD TFT Pipeline")
     parser.add_argument(
-        "--mode", choices=["train", "predict", "dashboard", "all"],
+        "--mode", choices=["train", "predict", "evaluate", "dashboard", "all"],
         default="dashboard", help="Режим работы pipeline"
     )
     parser.add_argument(
@@ -52,6 +53,13 @@ def main():
         print("="*50)
         from src.predict import predict
         predict(use_5_stations=args.quick, checkpoint_path=args.checkpoint)
+
+    if args.mode == "evaluate":
+        print("\n" + "="*50)
+        print(" Расчёт метрик качества")
+        print("="*50)
+        from src.predict import evaluate_all
+        evaluate_all()
 
     if args.mode in ("dashboard", "all"):
         print("\n" + "="*50)

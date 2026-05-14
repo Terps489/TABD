@@ -11,6 +11,10 @@ from pytorch_forecasting import TemporalFusionTransformer, TimeSeriesDataSet
 
 from src.config import MODELS_DIR, OUTPUTS_DIR, DATA_CACHE, TARGETS
 from src.data_loader import create_datasets
+from src.baselines import (
+    build_validation_actual, load_tft_predictions, run_baselines,
+)
+from src.metrics import compute_metrics_long, save_metrics, write_summary
 
 warnings.filterwarnings("ignore")
 
@@ -113,7 +117,47 @@ def predict(
     _save_feature_importance(df, forecasts_dir)
 
     print(f"\nПрогнозы сохранены в {forecasts_dir}")
+
+    try:
+        evaluate_all()
+    except Exception as e:
+        print(f"Предупреждение: расчёт метрик не удался ({e}).")
+
     return results
+
+
+def evaluate_all() -> pd.DataFrame:
+    """Считает метрики TFT (по медиане) и baseline-моделей на одной и той же
+    24-часовой валидационной выборке. Возвращает long-DataFrame со всеми
+    строками и пишет outputs/metrics/metrics.csv + summary.json."""
+    print("\nРасчёт метрик качества...")
+    actual = build_validation_actual()
+    print(f"  Валидационная выборка: {len(actual)} строк")
+
+    all_rows: list[pd.DataFrame] = []
+
+    try:
+        tft_pred = load_tft_predictions()
+        all_rows.append(compute_metrics_long(
+            model_name="TFT", actual=actual, predicted=tft_pred,
+        ))
+        print(f"  TFT: метрики посчитаны")
+    except FileNotFoundError as e:
+        print(f"  TFT: пропуск ({e})")
+
+    baseline_preds = run_baselines()
+    for name, preds in baseline_preds.items():
+        all_rows.append(compute_metrics_long(
+            model_name=name, actual=actual, predicted=preds,
+        ))
+        print(f"  {name}: метрики посчитаны")
+
+    df_all = pd.concat(all_rows, ignore_index=True) if all_rows else pd.DataFrame()
+    if not df_all.empty:
+        csv_path = save_metrics(df_all)
+        json_path = write_summary(df_all)
+        print(f"  Сохранено: {csv_path.name}, {json_path.name}")
+    return df_all
 
 
 def _save_feature_importance(df: pd.DataFrame, out_dir: Path):

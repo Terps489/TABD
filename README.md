@@ -45,6 +45,29 @@ $env:TABD_DATA_DIR = "<путь к папке с CSV>"
 После первого обучения данные кэшируются в `models/data_cache.parquet`,
 и для запуска `predict` / `dashboard` CSV-файлы больше не требуются.
 
+### Быстрый старт без своего датасета
+
+В git закоммичен маленький обезличенный sample (`data/sample/`, 2 АЗС × 14 дней).
+Чтобы запуститься на нём:
+
+```powershell
+$env:TABD_DATA_DIR = "data/sample"
+python run.py --mode train --quick
+python run.py --mode predict
+python run.py --mode dashboard
+```
+
+Регенерация sample из полного датасета — `python scripts/make_sample.py --source <path>`.
+
+Полная синтетика за 2024 год (5 АЗС × 8784 ч ≈ 22 МБ, **не в git**) генерируется
+скриптом `scripts/make_synthetic.py` — этого хватает для реального обучения TFT:
+
+```powershell
+python scripts/make_synthetic.py            # data/synthetic/ по умолчанию
+$env:TABD_DATA_DIR = "data/synthetic"
+python run.py --mode train
+```
+
 ---
 
 ## Ручной запуск
@@ -84,13 +107,30 @@ python run.py --mode predict
 Использует **лучший чекпоинт** из `models/training_meta.json` и кэш
 `models/data_cache.parquet`. Создаёт CSV-файлы прогнозов в
 `outputs/forecasts/` для всех 9 целевых переменных
-(P10 / медиана / P90).
+(P10 / медиана / P90). Также автоматически считаются метрики качества
+(MAE/RMSE/MAPE/SMAPE по каждому таргету и каждой АЗС) и сравнение с
+baseline-моделями — артефакты в `outputs/metrics/`.
 
 Использовать конкретный чекпоинт:
 
 ```powershell
 python run.py --mode predict --checkpoint "<путь к .ckpt>"
 ```
+
+### 2b. Пересчёт метрик без перегенерации прогнозов
+
+```powershell
+python run.py --mode evaluate
+```
+
+Считает MAE/RMSE/MAPE/SMAPE для TFT (по уже существующим CSV в
+`outputs/forecasts/`) и для двух baseline-моделей:
+
+- `naive_yesterday`: ŷ(t) = y(t − 24)  — повтор предыдущего дня
+- `seasonal_naive_week`: ŷ(t) = y(t − 168) — повтор недели назад
+
+Результаты — `outputs/metrics/metrics.csv` (long: model × target × station)
+и `outputs/metrics/summary.json` (macro-avg).
 
 ### 3. Запуск дашборда
 
@@ -159,11 +199,19 @@ TABD/
 │   ├── data_loader.py   # загрузка CSV, feature engineering, TimeSeriesDataSet
 │   ├── train.py         # обучение TFT с GPU, чекпоинты, early stopping
 │   ├── predict.py       # инференс, квантильные прогнозы, важность факторов
-│   └── dashboard.py     # Dash-дашборд (5 вкладок)
+│   ├── metrics.py       # MAE / RMSE / MAPE / SMAPE по таргету и АЗС
+│   ├── baselines.py     # naive_yesterday + seasonal_naive_week
+│   ├── training_runner.py  # фоновый subprocess для запуска train/predict из UI
+│   └── dashboard.py     # Dash-дашборд (8 вкладок, включая Метрики и Настройки)
 ├── assets/style.css     # CSS для тёмной темы дашборда
+├── scripts/
+│   └── make_sample.py   # генерация маленького обезличенного sample (2 АЗС × 14 дней)
 ├── data/                # CSV-файлы (положить сюда или указать TABD_DATA_DIR)
+│   └── sample/          # маленький sample, закоммичен в git для воспроизводимости
 ├── models/              # чекпоинты + parquet-кэш
 ├── outputs/forecasts/   # CSV с прогнозами по каждому таргету
+├── outputs/metrics/     # сравнение TFT vs baselines (metrics.csv, summary.json)
+├── outputs/baselines/   # прогнозы baseline-моделей (long-CSV)
 ├── logs/                # CSVLogger логи обучения
 ├── run.py               # главная точка входа
 ├── run.ps1              # обёртка PowerShell
