@@ -176,6 +176,10 @@ app.layout = dbc.Container(fluid=True, children=[
 
         # ── Вкладка 3: Прогнозы TFT ────────────────────────────────────────────
         dbc.Tab(label="Прогнозы TFT", children=[
+            # Настройки графика хранятся в localStorage браузера.
+            # Пусто = используются дефолты из config.FORECAST_CHART_*.
+            dcc.Store(id="forecast-settings-store", storage_type="local"),
+
             dbc.Row([
                 dbc.Col([
                     html.Label("АЗС для прогноза", style={"color": "#aaa"}),
@@ -196,7 +200,64 @@ app.layout = dbc.Container(fluid=True, children=[
                         style={"backgroundColor": "#333"},
                     ),
                 ], width=4),
+                dbc.Col([
+                    html.Label(" ", style={"color": "#aaa"}),
+                    dbc.Button(
+                        [html.Span("⚙", style={"fontSize": "18px", "marginRight": "6px"}),
+                         "Настройки"],
+                        id="forecast-settings-btn",
+                        color="secondary", outline=True,
+                        className="w-100",
+                    ),
+                ], width=4, className="d-flex flex-column justify-content-end"),
             ], className="mb-3 mt-3"),
+
+            dbc.Collapse(
+                dbc.Card(style=CARD, children=[
+                    html.H6("Часы для графика прогноза",
+                            style={"color": "#17a2b8"}),
+                    dbc.Row([
+                        dbc.Col([
+                            html.Label("История (← факт), часов",
+                                       style={"color": "#aaa", "fontSize": "13px"}),
+                            dbc.Input(
+                                id="forecast-settings-history",
+                                type="number", min=1, max=168, step=1,
+                            ),
+                        ], width=4),
+                        dbc.Col([
+                            html.Label("Прогноз (→), часов",
+                                       style={"color": "#aaa", "fontSize": "13px"}),
+                            dbc.Input(
+                                id="forecast-settings-future",
+                                type="number", min=1, max=720, step=1,
+                            ),
+                        ], width=4),
+                        dbc.Col([
+                            html.Label(" ", style={"color": "#aaa"}),
+                            dbc.Button("Сохранить",
+                                       id="forecast-settings-save",
+                                       color="info", className="w-100"),
+                        ], width=2, className="d-flex flex-column justify-content-end"),
+                        dbc.Col([
+                            html.Label(" ", style={"color": "#aaa"}),
+                            dbc.Button("Сброс",
+                                       id="forecast-settings-reset",
+                                       color="secondary", outline=True,
+                                       className="w-100"),
+                        ], width=2, className="d-flex flex-column justify-content-end"),
+                    ]),
+                    html.Small(
+                        f"При прогнозе > 24 ч включается итеративный rollout (медленнее, "
+                        f"точность падает). Сохраняется в браузере; «Сброс» → дефолты "
+                        f"из конфига ({FORECAST_CHART_HISTORY_HOURS} / "
+                        f"{FORECAST_CHART_FUTURE_HOURS}).",
+                        style={"color": "#888", "display": "block", "marginTop": "8px"},
+                    ),
+                ]),
+                id="forecast-settings-collapse", is_open=False,
+            ),
+
             dbc.Row([dbc.Col(dcc.Graph(id="forecast-chart"), width=12)]),
             dbc.Row([dbc.Col(
                 dbc.Alert(
@@ -330,9 +391,11 @@ app.layout = dbc.Container(fluid=True, children=[
                                 "продажи, суточный и недельный паттерн, влияние погоды."],
                                 style={"color": "#ccc", "marginBottom": "8px"}),
                             html.Li([html.B("Прогнозы TFT — "),
-                                "график прогноза на 24 ч вперёд для выбранной АЗС "
-                                "и показателя. Слева от x=0 — 48 ч факта (синяя), "
-                                "справа — медиана прогноза (жёлтая) с интервалом P10–P90."],
+                                "график прогноза для выбранной АЗС и показателя. "
+                                "Слева от x=0 — факт (синяя), справа — медиана прогноза "
+                                "(жёлтая) с интервалом P10–P90. Кнопка ⚙ «Настройки» — "
+                                "задать своё количество часов истории и прогноза; "
+                                "значения сохраняются в localStorage браузера."],
                                 style={"color": "#ccc", "marginBottom": "8px"}),
                             html.Li([html.B("Прогноз — таблица — "),
                                 "числовой прогноз на 24 / 48 / 168 / 720 часов. "
@@ -341,8 +404,8 @@ app.layout = dbc.Container(fluid=True, children=[
                                 style={"color": "#ccc", "marginBottom": "8px"}),
                             html.Li([html.B("Рекомендации — "),
                                 "автоматические инсайты (топ-5 факторов + что с ними делать), "
-                                "топ-10 АЗС, важность факторов, эффект акций, цена конкурента vs "
-                                "продажи АИ-92."],
+                                "топ-10 АЗС, важность факторов, эффект акций и "
+                                "корреляционная матрица 9 таргетов × 12 факторов."],
                                 style={"color": "#ccc"}),
                         ]),
                     ])
@@ -565,16 +628,74 @@ def update_station(station, fuel_cols):
 
 
 # ── Callbacks: Прогнозы ────────────────────────────────────────────────────────
+def _effective_forecast_hours(settings: dict | None) -> tuple[int, int]:
+    """Достаём (history, future) из store или подставляем дефолты конфига."""
+    s = settings or {}
+    return (
+        int(s.get("history") or FORECAST_CHART_HISTORY_HOURS),
+        int(s.get("future") or FORECAST_CHART_FUTURE_HOURS),
+    )
+
+
+@app.callback(
+    Output("forecast-settings-collapse", "is_open"),
+    Input("forecast-settings-btn", "n_clicks"),
+    State("forecast-settings-collapse", "is_open"),
+    prevent_initial_call=True,
+)
+def toggle_forecast_settings(n, is_open):
+    return not is_open
+
+
+@app.callback(
+    Output("forecast-settings-history", "value"),
+    Output("forecast-settings-future", "value"),
+    Input("forecast-settings-collapse", "is_open"),
+    Input("forecast-settings-reset", "n_clicks"),
+    State("forecast-settings-store", "data"),
+    prevent_initial_call=True,
+)
+def populate_forecast_settings(is_open, reset_clicks, stored):
+    ctx = dash.callback_context.triggered_id
+    if ctx == "forecast-settings-reset":
+        return FORECAST_CHART_HISTORY_HOURS, FORECAST_CHART_FUTURE_HOURS
+    if not is_open:
+        raise dash.exceptions.PreventUpdate
+    h, f = _effective_forecast_hours(stored)
+    return h, f
+
+
+@app.callback(
+    Output("forecast-settings-store", "data"),
+    Input("forecast-settings-save", "n_clicks"),
+    Input("forecast-settings-reset", "n_clicks"),
+    State("forecast-settings-history", "value"),
+    State("forecast-settings-future", "value"),
+    prevent_initial_call=True,
+)
+def save_forecast_settings(save_n, reset_n, hist, future):
+    if dash.callback_context.triggered_id == "forecast-settings-reset":
+        return None
+    if not save_n:
+        raise dash.exceptions.PreventUpdate
+    return {
+        "history": int(hist) if hist else FORECAST_CHART_HISTORY_HOURS,
+        "future": int(future) if future else FORECAST_CHART_FUTURE_HOURS,
+    }
+
+
 @app.callback(
     Output("forecast-chart", "figure"),
     Output("forecast-status", "children"),
     Output("forecast-status", "color"),
     Input("forecast-station", "value"),
     Input("forecast-target", "value"),
+    Input("forecast-settings-store", "data"),
 )
-def update_forecast(station, target):
+def update_forecast(station, target, settings):
+    history_hours, future_hours = _effective_forecast_hours(settings)
     try:
-        df_fc = forecast_extended(target, FORECAST_CHART_FUTURE_HOURS)
+        df_fc = forecast_extended(target, future_hours)
     except FileNotFoundError as e:
         fig = go.Figure()
         fig.add_annotation(text=f"Прогноз не найден: {e}",
@@ -588,7 +709,7 @@ def update_forecast(station, target):
     pred_len = len(df_station)
 
     d_actual = df_raw[df_raw["station_name"] == station].sort_values("timestamp")
-    d_context = d_actual.tail(FORECAST_CHART_HISTORY_HOURS).reset_index(drop=True)
+    d_context = d_actual.tail(history_hours).reset_index(drop=True)
 
     x_actual = list(range(-len(d_context) + 1, 1))
     x_forecast = df_station["hour_ahead"].tolist()
@@ -620,15 +741,15 @@ def update_forecast(station, target):
         fig.add_vline(x=0, line=dict(color="#888", width=1, dash="dot"))
 
     target_label = target.replace("_", " ").upper()
-    rollout_note = " (rollout)" if FORECAST_CHART_FUTURE_HOURS > 24 else ""
+    rollout_note = " (rollout)" if future_hours > 24 else ""
     layout = _dark_layout(
         f"Прогноз TFT: {target_label} — {station}  "
-        f"(история {FORECAST_CHART_HISTORY_HOURS} ч, прогноз {FORECAST_CHART_FUTURE_HOURS} ч{rollout_note})"
+        f"(история {history_hours} ч, прогноз {future_hours} ч{rollout_note})"
     )
     layout["xaxis"] = dict(gridcolor="#333", title="Часы (отрицательные = история, положительные = прогноз)")
     layout["yaxis"] = dict(gridcolor="#333", title="Литры/час" if "fuel" in target or "sales" in target else "Руб/час")
     fig.update_layout(**layout)
-    return fig, f"Прогноз загружен ({FORECAST_CHART_FUTURE_HOURS} ч).", "success"
+    return fig, f"Прогноз загружен: история {history_hours}ч, прогноз {future_hours}ч.", "success"
 
 
 # ── Callbacks: Прогноз — таблица ───────────────────────────────────────────────
