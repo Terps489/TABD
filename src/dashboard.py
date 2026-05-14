@@ -15,7 +15,8 @@ import dash_bootstrap_components as dbc
 from src.config import (
     DETAILED_DATA, FIVE_STATIONS_DATA, DATA_CACHE,
     OUTPUTS_DIR, MODELS_DIR, PROJECT_DIR, TARGETS,
-    DASHBOARD_HOST, DASHBOARD_PORT, DASHBOARD_DEBUG, USE_5_STATIONS
+    DASHBOARD_HOST, DASHBOARD_PORT, DASHBOARD_DEBUG, USE_5_STATIONS,
+    FORECAST_CHART_HISTORY_HOURS, FORECAST_CHART_FUTURE_HOURS,
 )
 from src.predict import generate_recommendations, forecast_extended
 
@@ -206,21 +207,7 @@ app.layout = dbc.Container(fluid=True, children=[
             )]),
         ]),
 
-        # ── Вкладка 4: Факторный анализ ────────────────────────────────────────
-        dbc.Tab(label="Факторный анализ", children=[
-            dbc.Row([
-                dbc.Col(dcc.Graph(id="factor-importance"), width=7),
-                dbc.Col([
-                    dbc.Card(style=CARD, children=[
-                        html.H5("Влияние факторов", style={"color": "#17a2b8"}),
-                        dcc.Graph(id="factor-promo"),
-                    ])
-                ], width=5),
-            ], className="mt-3"),
-            dbc.Row([dbc.Col(dcc.Graph(id="factor-competitor"), width=12)]),
-        ]),
-
-        # ── Вкладка 5: Прогноз — таблица ──────────────────────────────────────
+        # ── Вкладка 4: Прогноз — таблица ──────────────────────────────────────
         dbc.Tab(label="Прогноз — таблица", children=[
             dbc.Row([
                 dbc.Col([
@@ -282,7 +269,7 @@ app.layout = dbc.Container(fluid=True, children=[
             ]),
         ]),
 
-        # ── Вкладка 6: Рекомендации ────────────────────────────────────────────
+        # ── Вкладка 5: Рекомендации + факторный анализ ─────────────────────────
         dbc.Tab(label="Рекомендации", children=[
             dbc.Row([
                 dbc.Col([
@@ -298,7 +285,147 @@ app.layout = dbc.Container(fluid=True, children=[
                     ])
                 ], width=6),
             ], className="mt-3"),
-            dbc.Row([dbc.Col(dcc.Graph(id="rec-seasonal"), width=12)]),
+            dbc.Row([
+                dbc.Col(dcc.Graph(id="factor-importance"), width=7),
+                dbc.Col([
+                    dbc.Card(style=CARD, children=[
+                        html.H5("Эффект акций", style={"color": "#17a2b8"}),
+                        dcc.Graph(id="factor-promo"),
+                    ])
+                ], width=5),
+            ]),
+            dbc.Row([dbc.Col(dcc.Graph(id="factor-corr-heatmap"), width=12)]),
+        ]),
+
+        # ── Вкладка 6: О проекте ───────────────────────────────────────────────
+        dbc.Tab(label="О проекте", children=[
+            dbc.Row([
+                dbc.Col([
+                    dbc.Card(style=CARD, children=[
+                        html.H4("ТАБД — Анализ сети АЗС «Татнефть»",
+                                style={"color": "#17a2b8"}),
+                        html.P(
+                            "Учебный проект курса «Технологии анализа больших данных». "
+                            "На синтетическом датасете 25 АЗС (8760 часов = 1 год) обучена "
+                            "Temporal Fusion Transformer — современная attention-based модель "
+                            "временных рядов, дающая квантильный прогноз на 24 часа вперёд "
+                            "одновременно по 9 показателям.",
+                            style={"color": "#ccc", "fontSize": "15px"}),
+                    ])
+                ], width=12),
+            ], className="mt-3"),
+
+            dbc.Row([
+                dbc.Col([
+                    dbc.Card(style=CARD, children=[
+                        html.H5("Вкладки", style={"color": "#17a2b8"}),
+                        html.Ul([
+                            html.Li([html.B("Обзор сети — "),
+                                "агрегированный взгляд на 25 АЗС: KPI, динамика "
+                                "продаж по топливу, структура, трафик, выручка магазина, "
+                                "тепловая карта час × день недели."],
+                                style={"color": "#ccc", "marginBottom": "8px"}),
+                            html.Li([html.B("Анализ АЗС — "),
+                                "глубокая аналитика одной выбранной АЗС: ежедневные "
+                                "продажи, суточный и недельный паттерн, влияние погоды."],
+                                style={"color": "#ccc", "marginBottom": "8px"}),
+                            html.Li([html.B("Прогнозы TFT — "),
+                                "график прогноза на 24 ч вперёд для выбранной АЗС "
+                                "и показателя. Слева от x=0 — 48 ч факта (синяя), "
+                                "справа — медиана прогноза (жёлтая) с интервалом P10–P90."],
+                                style={"color": "#ccc", "marginBottom": "8px"}),
+                            html.Li([html.B("Прогноз — таблица — "),
+                                "числовой прогноз на 24 / 48 / 168 / 720 часов. "
+                                "Для горизонта > 24 ч модель работает итеративно, "
+                                "точность падает с ростом горизонта."],
+                                style={"color": "#ccc", "marginBottom": "8px"}),
+                            html.Li([html.B("Рекомендации — "),
+                                "автоматические инсайты (топ-5 факторов + что с ними делать), "
+                                "топ-10 АЗС, важность факторов, эффект акций, цена конкурента vs "
+                                "продажи АИ-92."],
+                                style={"color": "#ccc"}),
+                        ]),
+                    ])
+                ], width=6),
+
+                dbc.Col([
+                    dbc.Card(style=CARD, children=[
+                        html.H5("Квантили прогноза", style={"color": "#17a2b8"}),
+                        html.P([
+                            html.B("P10 "),
+                            "— нижняя оценка. С вероятностью 90 % реальное значение "
+                            "будет выше. Для консервативного планирования запасов.",
+                        ], style={"color": "#ccc", "marginBottom": "6px"}),
+                        html.P([
+                            html.B("Медиана "),
+                            "— наиболее вероятное значение, базовое планирование.",
+                        ], style={"color": "#ccc", "marginBottom": "6px"}),
+                        html.P([
+                            html.B("P90 "),
+                            "— верхняя оценка. С вероятностью 90 % реальное значение "
+                            "будет ниже. Для оценки пиковой нагрузки и страхового запаса.",
+                        ], style={"color": "#ccc", "marginBottom": "6px"}),
+                        html.P([
+                            html.B("Интервал P10–P90 "),
+                            "— 80-% доверительный коридор. Узкий = модель уверена, "
+                            "широкий = высокая неопределённость.",
+                        ], style={"color": "#ccc"}),
+                    ])
+                ], width=6),
+            ]),
+
+            dbc.Row([
+                dbc.Col([
+                    dbc.Card(style=CARD, children=[
+                        html.H5("9 целевых показателей",
+                                style={"color": "#17a2b8"}),
+                        html.P("Модель прогнозирует одновременно (л/ч для топлива, руб/ч для магазина):",
+                               style={"color": "#aaa", "fontSize": "13px",
+                                      "marginBottom": "6px"}),
+                        html.Ul([
+                            html.Li("total_fuel_sales — суммарные продажи топлива",
+                                    style={"color": "#ccc"}),
+                            html.Li("sales_AI92 / AI95 / AI98 — бензины 92/95/98",
+                                    style={"color": "#ccc"}),
+                            html.Li("sales_DT_EURO / TANEKO / SUMMER / WINTER — дизель 4 видов",
+                                    style={"color": "#ccc"}),
+                            html.Li("shop_total_revenue — выручка магазина при АЗС",
+                                    style={"color": "#ccc"}),
+                        ], style={"marginBottom": 0}),
+                    ])
+                ], width=6),
+
+                dbc.Col([
+                    dbc.Card(style=CARD, children=[
+                        html.H5("Стек и документация",
+                                style={"color": "#17a2b8"}),
+                        html.P([
+                            html.B("Модель: "),
+                            "TFT (pytorch-forecasting 1.7), 879k параметров, "
+                            "encoder 168 ч, prediction 24 ч, MultiLoss(QuantileLoss × 9).",
+                        ], style={"color": "#ccc", "marginBottom": "6px"}),
+                        html.P([
+                            html.B("Стек: "),
+                            "PyTorch 2.5.1 + CUDA 12.4, Lightning 2.6, "
+                            "Dash 4 + Bootstrap DARKLY, Plotly.",
+                        ], style={"color": "#ccc", "marginBottom": "6px"}),
+                        html.P([
+                            html.B("Документация: "),
+                            html.Code("README.md", style={"color": "#17a2b8"}),
+                            " (установка/запуск), ",
+                            html.Code("DOCS.md", style={"color": "#17a2b8"}),
+                            " (подробно про показатели, прогнозы и вкладки).",
+                        ], style={"color": "#ccc", "marginBottom": "6px"}),
+                        html.P([
+                            html.B("Репозиторий: "),
+                            html.A("github.com/Terps489/TABD",
+                                   href="https://github.com/Terps489/TABD",
+                                   target="_blank",
+                                   style={"color": "#17a2b8"}),
+                        ], style={"color": "#ccc"}),
+                    ])
+                ], width=6),
+            ]),
         ]),
     ]),
 ], style={"backgroundColor": "#1a1a2e", "minHeight": "100vh"})
@@ -446,27 +573,25 @@ def update_station(station, fuel_cols):
     Input("forecast-target", "value"),
 )
 def update_forecast(station, target):
-    forecast_file = OUTPUTS_DIR / "forecasts" / f"{target}.csv"
-    if not forecast_file.exists():
+    try:
+        df_fc = forecast_extended(target, FORECAST_CHART_FUTURE_HOURS)
+    except FileNotFoundError as e:
         fig = go.Figure()
-        fig.add_annotation(text="Модель ещё не обучена. Запустите: python run.py --mode train",
+        fig.add_annotation(text=f"Прогноз не найден: {e}",
                            xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False,
                            font=dict(size=14, color="#aaa"))
         fig.update_layout(**_dark_layout("Прогноз TFT"))
         return fig, "Файл прогноза не найден. Запустите обучение.", "warning"
 
-    df_fc = pd.read_csv(forecast_file, dtype={"station_id": str})
     station_id = str(df_raw[df_raw["station_name"] == station]["station_id"].iloc[0])
-    df_station = df_fc[df_fc["station_id"] == station_id].sort_values("step").reset_index(drop=True)
-
-    d_actual = df_raw[df_raw["station_name"] == station].copy().sort_values("timestamp")
+    df_station = df_fc[df_fc["station_id"] == station_id].sort_values("hour_ahead").reset_index(drop=True)
     pred_len = len(df_station)
-    # Контекст: 48 часов факта перед прогнозом, потом сам прогноз
-    context_len = 48
-    d_context = d_actual.tail(context_len).reset_index(drop=True)
 
-    x_actual = list(range(-len(d_context) + 1, 1))  # отрицательные часы (история)
-    x_forecast = list(range(1, pred_len + 1))        # положительные часы (прогноз)
+    d_actual = df_raw[df_raw["station_name"] == station].sort_values("timestamp")
+    d_context = d_actual.tail(FORECAST_CHART_HISTORY_HOURS).reset_index(drop=True)
+
+    x_actual = list(range(-len(d_context) + 1, 1))
+    x_forecast = df_station["hour_ahead"].tolist()
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(
@@ -477,30 +602,33 @@ def update_forecast(station, target):
     ))
     if pred_len:
         fig.add_trace(go.Scatter(
-            x=x_forecast, y=df_station["forecast_median"].values,
+            x=x_forecast, y=df_station["median"].values,
             name="Прогноз (медиана)", mode="lines+markers",
             line=dict(color="#ffc107", width=2, dash="dash")
         ))
         fig.add_trace(go.Scatter(
-            x=x_forecast, y=df_station["forecast_p90"].values,
+            x=x_forecast, y=df_station["p90"].values,
             name="P90", mode="lines",
             line=dict(color="rgba(255,99,71,0.3)", width=0)
         ))
         fig.add_trace(go.Scatter(
-            x=x_forecast, y=df_station["forecast_p10"].values,
+            x=x_forecast, y=df_station["p10"].values,
             name="P10-P90 интервал", mode="lines",
             line=dict(color="rgba(255,99,71,0.3)", width=0),
             fill="tonexty", fillcolor="rgba(255,99,71,0.15)"
         ))
-        # Вертикальная линия "сейчас"
         fig.add_vline(x=0, line=dict(color="#888", width=1, dash="dot"))
 
     target_label = target.replace("_", " ").upper()
-    layout = _dark_layout(f"Прогноз TFT: {target_label} — {station}  (час 0 = текущий момент)")
+    rollout_note = " (rollout)" if FORECAST_CHART_FUTURE_HOURS > 24 else ""
+    layout = _dark_layout(
+        f"Прогноз TFT: {target_label} — {station}  "
+        f"(история {FORECAST_CHART_HISTORY_HOURS} ч, прогноз {FORECAST_CHART_FUTURE_HOURS} ч{rollout_note})"
+    )
     layout["xaxis"] = dict(gridcolor="#333", title="Часы (отрицательные = история, положительные = прогноз)")
     layout["yaxis"] = dict(gridcolor="#333", title="Литры/час" if "fuel" in target or "sales" in target else "Руб/час")
     fig.update_layout(**layout)
-    return fig, "Прогноз загружен успешно.", "success"
+    return fig, f"Прогноз загружен ({FORECAST_CHART_FUTURE_HOURS} ч).", "success"
 
 
 # ── Callbacks: Прогноз — таблица ───────────────────────────────────────────────
@@ -611,18 +739,42 @@ def update_factors(start, end):
     return fig_imp, fig_promo
 
 
-@app.callback(Output("factor-competitor", "figure"),
-              Input("station-select", "value"))
-def update_competitor(station):
-    d = df_raw[df_raw["station_name"] == station].copy()
-    d_sample = d.sample(min(2000, len(d)), random_state=42)
-    fig = px.scatter(
-        d_sample, x="competitor_price_AI92", y="sales_AI92",
-        color="season", opacity=0.5,
-        color_discrete_sequence=px.colors.qualitative.Pastel,
-        title=f"Цена конкурента vs Продажи АИ-92 — {station}",
+_HEATMAP_FACTORS = [
+    "total_traffic", "temperature", "precipitation_mm",
+    "is_weekend", "is_holiday", "is_rush_hour", "is_night",
+    "promotion_fuel_active", "promotion_shop_active", "ad_active",
+    "competitor_price_AI92", "competitor_price_AI95",
+]
+_HEATMAP_LABELS = [
+    "Трафик", "Температура", "Осадки",
+    "Выходной", "Праздник", "Час пик", "Ночь",
+    "Промо топливо", "Промо магазин", "Реклама",
+    "Цена конк. AI92", "Цена конк. AI95",
+]
+
+
+@app.callback(Output("factor-corr-heatmap", "figure"),
+              Input("overview-date-range", "start_date"),
+              Input("overview-date-range", "end_date"))
+def update_factor_heatmap(start, end):
+    mask = (df_raw["timestamp"] >= start) & (df_raw["timestamp"] <= end)
+    d = df_raw[mask]
+    available = [f for f in _HEATMAP_FACTORS if f in d.columns]
+    labels = [_HEATMAP_LABELS[_HEATMAP_FACTORS.index(f)] for f in available]
+    matrix = np.array([
+        [d[f].corr(d[t]) for f in available] for t in TARGETS
+    ])
+    target_labels = [t.replace("_", " ").replace("sales ", "").upper() for t in TARGETS]
+    fig = go.Figure(go.Heatmap(
+        z=matrix, x=labels, y=target_labels,
+        colorscale="RdBu", zmid=0, zmin=-1, zmax=1,
+        colorbar=dict(title="Корреляция"),
+        hovertemplate="%{y} ↔ %{x}<br>r = %{z:.2f}<extra></extra>",
+    ))
+    fig.update_layout(
+        **_dark_layout("Корреляция факторов с целевыми показателями")
     )
-    fig.update_layout(**_dark_layout(""))
+    fig.update_xaxes(tickangle=-30)
     return fig
 
 
@@ -630,7 +782,6 @@ def update_competitor(station):
 @app.callback(
     Output("recommendations-text", "children"),
     Output("rec-top-stations", "figure"),
-    Output("rec-seasonal", "figure"),
     Input("overview-date-range", "start_date"),
     Input("overview-date-range", "end_date"),
 )
@@ -638,7 +789,6 @@ def update_recommendations(start, end):
     recs = generate_recommendations()
     rec_items = [html.P(r, style={"color": "#ccc", "fontSize": "15px"}) for r in recs]
 
-    # Топ АЗС
     top = df_raw.groupby("station_name")["total_fuel_sales"].sum().nlargest(10).reset_index()
     fig_top = go.Figure(go.Bar(
         x=top["total_fuel_sales"], y=top["station_name"],
@@ -646,22 +796,7 @@ def update_recommendations(start, end):
     ))
     fig_top.update_layout(**_dark_layout("Топ-10 АЗС по продажам"))
 
-    # Сезонность
-    seasonal = df_raw.groupby("season")[FUEL_COLS].sum().reset_index()
-    season_order = {"winter": 0, "spring": 1, "summer": 2, "autumn": 3}
-    season_labels = {"winter": "Зима", "spring": "Весна", "summer": "Лето", "autumn": "Осень"}
-    seasonal["order"] = seasonal["season"].map(season_order)
-    seasonal = seasonal.sort_values("order")
-    seasonal["season"] = seasonal["season"].map(season_labels)
-
-    fig_seasonal = go.Figure()
-    for col, label, color in zip(FUEL_COLS, FUEL_LABELS, FUEL_COLORS):
-        fig_seasonal.add_trace(go.Bar(
-            x=seasonal["season"], y=seasonal[col], name=label, marker_color=color
-        ))
-    fig_seasonal.update_layout(barmode="stack", **_dark_layout("Продажи по сезонам"))
-
-    return rec_items, fig_top, fig_seasonal
+    return rec_items, fig_top
 
 
 def run_dashboard():

@@ -15,11 +15,33 @@ from src.data_loader import create_datasets
 warnings.filterwarnings("ignore")
 
 # Кэш ресурсов для on-demand прогнозов (дашборд):
-# модель и training-датасет грузятся один раз, результаты прогноза — по таргету.
+# модель и training-датасет грузятся один раз, rollout-результаты — по таргету.
 _MODEL_CACHE: TemporalFusionTransformer | None = None
 _TRAINING_CACHE: TimeSeriesDataSet | None = None
 _DF_CACHE: pd.DataFrame | None = None
+# key=target, value=(longest_horizon_computed, long-df). Хранит ТОЛЬКО rollout-результаты;
+# 24ч-путь использует training-time CSV и не кэшируется (численно другая дорожка).
 _FORECAST_CACHE: dict[str, tuple[int, pd.DataFrame]] = {}
+
+
+def _extract_quantiles(tp: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Из тензора квантилей (n_samples, n_q, pred_len) или (n_samples, pred_len, n_q)
+    вернуть (P10, медиана, P90) формы (n_samples, pred_len).
+    Дефолтный QuantileLoss даёт 7 квантилей, индексы 1/3/5 = P10/median/P90."""
+    if tp.ndim == 3 and tp.shape[1] == 7:
+        return tp[:, 1, :], tp[:, 3, :], tp[:, 5, :]
+    if tp.ndim == 3 and tp.shape[2] == 7:
+        return tp[:, :, 1], tp[:, :, 3], tp[:, :, 5]
+    flat = tp.reshape(tp.shape[0], -1)
+    return flat, flat, flat
+
+
+def _split_multitarget_preds(preds) -> list:
+    """В pytorch-forecasting 1.7 multi-target predict возвращает list[Tensor]; на single-target
+    собираем то же из последней оси для единого API."""
+    if isinstance(preds, (list, tuple)):
+        return list(preds)
+    return [preds[..., i] for i in range(len(TARGETS))]
 
 
 def load_model(checkpoint_path: str | Path | None = None) -> TemporalFusionTransformer:
@@ -30,7 +52,6 @@ def load_model(checkpoint_path: str | Path | None = None) -> TemporalFusionTrans
             meta = json.loads(meta_file.read_text())
             checkpoint_path = meta["best_checkpoint"]
         else:
-            # Найти последний чекпоинт
             ckpts = sorted(MODELS_DIR.glob("tft-*.ckpt"))
             if not ckpts:
                 raise FileNotFoundError(f"Чекпоинт не найден в {MODELS_DIR}. Сначала запустите обучение.")
@@ -46,15 +67,12 @@ def predict(
     use_5_stations: bool | None = None,
     checkpoint_path: str | Path | None = None,
 ) -> dict[str, pd.DataFrame]:
-    """
-    Запустить инференс на валидационной выборке.
-    Возвращает dict: {имя_таргета -> DataFrame с forecast_p10, forecast_median, forecast_p90}
-    """
+    """Запустить инференс на валидационной выборке и сохранить CSV с прогнозами на 24ч.
+    Возвращает dict: {имя_таргета -> DataFrame с forecast_p10/median/p90}."""
     OUTPUTS_DIR.mkdir(exist_ok=True)
     forecasts_dir = OUTPUTS_DIR / "forecasts"
     forecasts_dir.mkdir(exist_ok=True)
 
-    # Загрузка из parquet-кэша (обходит Windows DLL-конфликт CUDA + чтение CSV)
     if not DATA_CACHE.exists():
         raise FileNotFoundError(
             f"Кэш данных не найден: {DATA_CACHE}\n"
@@ -69,33 +87,13 @@ def predict(
     model.eval()
 
     print("Генерация прогнозов (mode=quantiles)...")
-    # Режим quantiles возвращает list[Tensor] для multi-target
     preds_obj = model.predict(val_loader, mode="quantiles", return_x=True)
-    preds = preds_obj.output
-    x = preds_obj.x
-
-    # Соответствие сэмпл -> station_id (через index валидационной выборки)
-    index_df = validation.x_to_index(x)
-    sample_station_ids = index_df["station_id"].astype(str).tolist()
-
-    # preds — list[Tensor] для multi-target
-    if not isinstance(preds, (list, tuple)):
-        preds = [preds[..., i] for i in range(len(TARGETS))]
+    preds = _split_multitarget_preds(preds_obj.output)
+    sample_station_ids = validation.x_to_index(preds_obj.x)["station_id"].astype(str).tolist()
 
     results = {}
     for i, target in enumerate(TARGETS):
-        tp = preds[i].cpu().numpy()  # (n_samples, n_quantiles, pred_len) или (n_samples, pred_len, n_quantiles)
-
-        # Определяем ось квантилей: дефолтный QuantileLoss даёт 7 квантилей [0.02,0.1,0.25,0.5,0.75,0.9,0.98]
-        # Приводим к форме (n_samples, pred_len) для каждого квантиля.
-        if tp.ndim == 3 and tp.shape[1] == 7:
-            p10, median, p90 = tp[:, 1, :], tp[:, 3, :], tp[:, 5, :]
-        elif tp.ndim == 3 and tp.shape[2] == 7:
-            p10, median, p90 = tp[:, :, 1], tp[:, :, 3], tp[:, :, 5]
-        else:
-            p10 = median = p90 = tp.reshape(tp.shape[0], -1)
-
-        # Long-формат: одна строка на (станция, шаг прогноза)
+        p10, median, p90 = _extract_quantiles(preds[i].cpu().numpy())
         n_samples, pred_len = p10.shape
         rows = []
         for s in range(n_samples):
@@ -112,7 +110,6 @@ def predict(
         df_out.to_csv(forecasts_dir / f"{target}.csv", index=False)
         print(f"  Сохранено: {target}.csv ({n_samples} станций x {pred_len} часов)")
 
-    # Важность признаков (корреляция факторов с total_fuel_sales)
     _save_feature_importance(df, forecasts_dir)
 
     print(f"\nПрогнозы сохранены в {forecasts_dir}")
@@ -237,7 +234,6 @@ def _synthesize_future(df_full: pd.DataFrame, n_hours: int) -> pd.DataFrame:
         template = df_st.tail(168).reset_index(drop=True)
         if len(template) == 0:
             continue
-        # Реплицируем шаблон по модулю длины (на случай <168)
         idxs = np.arange(n_hours) % len(template)
         block = template.iloc[idxs].reset_index(drop=True).copy()
 
@@ -245,7 +241,6 @@ def _synthesize_future(df_full: pd.DataFrame, n_hours: int) -> pd.DataFrame:
         block["timestamp"] = new_ts.values
         block["time_idx"] = last_idx + np.arange(1, n_hours + 1)
 
-        # Базовые временные поля (если есть в df)
         if "hour" in block.columns:
             block["hour"] = new_ts.hour
         if "day_of_week" in block.columns:
@@ -255,7 +250,6 @@ def _synthesize_future(df_full: pd.DataFrame, n_hours: int) -> pd.DataFrame:
         if "month" in block.columns:
             block["month"] = new_ts.month
 
-        # Циклические признаки (известные модели)
         block["hour_sin"] = np.sin(2 * np.pi * new_ts.hour / 24)
         block["hour_cos"] = np.cos(2 * np.pi * new_ts.hour / 24)
         block["day_sin"] = np.sin(2 * np.pi * new_ts.dayofweek / 7)
@@ -267,12 +261,10 @@ def _synthesize_future(df_full: pd.DataFrame, n_hours: int) -> pd.DataFrame:
         block["is_rush_hour"] = new_ts.hour.isin([7, 8, 9, 17, 18, 19]).astype(float)
         block["is_night"] = ((new_ts.hour < 6) | (new_ts.hour >= 22)).astype(float)
 
-        # Сезон от месяца (категориальный)
         if "season" in block.columns:
             block["season"] = [_month_to_season(int(m)) for m in new_ts.month]
             block["season"] = block["season"].astype(str)
 
-        # Обнуляем целевые — заполнит итеративный rollout
         for t in TARGETS:
             if t in block.columns:
                 block[t] = 0.0
@@ -284,24 +276,12 @@ def _synthesize_future(df_full: pd.DataFrame, n_hours: int) -> pd.DataFrame:
     return out
 
 
-def _extract_quantiles(tp: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Из тензора квантилей (n_samples, n_q, pred_len) или (n_samples, pred_len, n_q)
-    вернуть (P10, медиана, P90) формы (n_samples, pred_len).
-    Дефолтный QuantileLoss — 7 квантилей, индексы 1/3/5 = P10/median/P90."""
-    if tp.ndim == 3 and tp.shape[1] == 7:
-        return tp[:, 1, :], tp[:, 3, :], tp[:, 5, :]
-    if tp.ndim == 3 and tp.shape[2] == 7:
-        return tp[:, :, 1], tp[:, :, 3], tp[:, :, 5]
-    flat = tp.reshape(tp.shape[0], -1)
-    return flat, flat, flat
-
-
 def _iterative_forecast(target_name: str, horizon_hours: int) -> pd.DataFrame:
-    """Итеративный rollout: модель шагает по 24ч, предсказания подставляются
+    """Итеративный rollout: модель шагает по 24ч, медианы подставляются
     в энкодер как «история» для следующего шага.
 
-    Возвращает long-DataFrame: [station_id, hour_ahead, timestamp, p10, median, p90].
-    Содержит ВСЕ таргеты, но возвращается срез по `target_name`.
+    Возвращает long-DataFrame: [station_id, hour_ahead, timestamp, p10, median, p90]
+    для запрошенного таргета.
     """
     model, training, df_orig = _get_inference_resources()
     target_idx = TARGETS.index(target_name)
@@ -309,15 +289,20 @@ def _iterative_forecast(target_name: str, horizon_hours: int) -> pd.DataFrame:
     last_idx = int(df_orig["time_idx"].max())
     last_ts = df_orig["timestamp"].max()
 
-    # Один раз достраиваем весь будущий горизонт; заполнять будем итеративно
-    df_ext = _synthesize_future(df_orig, horizon_hours)
+    df_ext = _synthesize_future(df_orig, horizon_hours).reset_index(drop=True)
+
+    # MultiIndex (station_id, time_idx) → позиция в df_ext: даёт O(1)-lookup для
+    # векторного присваивания предсказанных медиан вместо boolean-mask на каждую станцию.
+    df_ext_idx = pd.MultiIndex.from_arrays(
+        [df_ext["station_id"].astype(str).values, df_ext["time_idx"].values]
+    )
 
     n_iter = math.ceil(horizon_hours / 24)
-    results: list[dict] = []
+    records: list[dict] = []
 
     for it in range(n_iter):
         block_last_idx = last_idx + (it + 1) * 24
-        df_iter = df_ext[df_ext["time_idx"] <= block_last_idx].copy()
+        df_iter = df_ext[df_ext["time_idx"] <= block_last_idx]
 
         pred_ds = TimeSeriesDataSet.from_dataset(
             training, df_iter, predict=True, stop_randomization=True
@@ -326,78 +311,61 @@ def _iterative_forecast(target_name: str, horizon_hours: int) -> pd.DataFrame:
 
         print(f"  rollout {it + 1}/{n_iter} (до часа +{(it + 1) * 24})...")
         preds_obj = model.predict(pred_loader, mode="quantiles", return_x=True)
-        preds = preds_obj.output
-        x = preds_obj.x
-        index_df = pred_ds.x_to_index(x)
-        sample_station_ids = index_df["station_id"].astype(str).tolist()
+        preds = _split_multitarget_preds(preds_obj.output)
+        sample_station_ids = pred_ds.x_to_index(preds_obj.x)["station_id"].astype(str).tolist()
 
-        if not isinstance(preds, (list, tuple)):
-            preds = [preds[..., i] for i in range(len(TARGETS))]
+        # Позиции 25×24=600 строк прогноза в df_ext: первая ось — станции в порядке батча,
+        # вторая — часы в окне. Совпадает с .ravel() от тензора (n_samples, 24).
+        start = block_last_idx - 23
+        time_idx_range = np.arange(start, block_last_idx + 1)
+        keys = [(sid, idx) for sid in sample_station_ids for idx in time_idx_range]
+        positions = df_ext_idx.get_indexer(keys)
 
-        # Подставляем медианы ВСЕХ таргетов в df_ext (на следующую итерацию)
-        # и сохраняем p10/median/p90 запрошенного таргета в результат.
+        req_p10 = req_med = req_p90 = None
         for ti, t in enumerate(TARGETS):
-            tp = preds[ti].cpu().numpy()
-            _, median_arr, _ = _extract_quantiles(tp)
-            # median_arr: (n_samples, 24)
-            for s_i, sid in enumerate(sample_station_ids):
-                start = block_last_idx - 24 + 1
-                # batched assign через mask по диапазону time_idx
-                mask = (
-                    (df_ext["station_id"] == sid)
-                    & (df_ext["time_idx"] >= start)
-                    & (df_ext["time_idx"] <= block_last_idx)
-                )
-                df_ext.loc[mask, t] = median_arr[s_i, :]
+            p10, median, p90 = _extract_quantiles(preds[ti].cpu().numpy())
+            df_ext.iloc[positions, df_ext.columns.get_loc(t)] = median.ravel()
+            if ti == target_idx:
+                req_p10, req_med, req_p90 = p10, median, p90
 
-        # Сохраняем требуемый таргет с квантилями в результат
-        tp_req = preds[target_idx].cpu().numpy()
-        p10, med, p90 = _extract_quantiles(tp_req)
         for s_i, sid in enumerate(sample_station_ids):
-            for h in range(med.shape[1]):
-                abs_idx = block_last_idx - 24 + 1 + h
-                hour_ahead = abs_idx - last_idx
+            for h in range(req_med.shape[1]):
+                hour_ahead = (start + h) - last_idx
                 if hour_ahead > horizon_hours:
                     continue
-                ts = last_ts + pd.Timedelta(hours=int(hour_ahead))
-                results.append({
+                records.append({
                     "station_id": sid,
                     "hour_ahead": int(hour_ahead),
-                    "timestamp": ts,
-                    "p10": float(p10[s_i, h]),
-                    "median": float(med[s_i, h]),
-                    "p90": float(p90[s_i, h]),
+                    "timestamp": last_ts + pd.Timedelta(hours=int(hour_ahead)),
+                    "p10": float(req_p10[s_i, h]),
+                    "median": float(req_med[s_i, h]),
+                    "p90": float(req_p90[s_i, h]),
                 })
 
-    return pd.DataFrame(results)
+    return pd.DataFrame(records)
 
 
 def forecast_extended(target_name: str, horizon_hours: int) -> pd.DataFrame:
-    """Прогноз на любой горизонт. Для 24ч читает из кэша CSV (быстро),
-    для большего горизонта запускает итеративный rollout.
+    """Прогноз на любой горизонт. Для ≤24ч читает training-time CSV (быстро),
+    для большего горизонта — итеративный rollout.
 
     Возвращает: [station_id, hour_ahead, timestamp, p10, median, p90].
     """
     if target_name not in TARGETS:
         raise ValueError(f"Неизвестный таргет: {target_name}")
 
-    # Внутрипроцессный кэш по таргету (горизонт >= запрошенного — отдаём срез)
-    cached = _FORECAST_CACHE.get(target_name)
-    if cached is not None:
-        cached_h, df_cached = cached
-        if cached_h >= horizon_hours:
-            return df_cached[df_cached["hour_ahead"] <= horizon_hours].copy()
-
-    # Быстрый путь: 24ч — берём из готовых CSV
+    # Быстрый путь: 24ч — это training-time валидация из CSV. Не кэшируем:
+    # rollout-результаты численно отличаются (медиана подаётся обратно в энкодер),
+    # поэтому смешивать их в одном кэше было бы неверно.
     if horizon_hours <= 24:
         csv_path = OUTPUTS_DIR / "forecasts" / f"{target_name}.csv"
         if csv_path.exists():
             df_fc = pd.read_csv(csv_path, dtype={"station_id": str})
-            # Найдём last_ts через parquet-кэш
             if not DATA_CACHE.exists():
                 raise FileNotFoundError(f"Нет {DATA_CACHE}.")
-            df_meta = pd.read_parquet(DATA_CACHE, columns=["timestamp"])
-            last_ts = pd.to_datetime(df_meta["timestamp"]).max()
+            last_ts = pd.to_datetime(
+                pd.read_parquet(DATA_CACHE, columns=["timestamp"])["timestamp"]
+            ).max()
             df_fc["hour_ahead"] = df_fc["step"].astype(int) + 1
             df_fc["timestamp"] = last_ts + pd.to_timedelta(df_fc["hour_ahead"], unit="h")
             out = df_fc.rename(columns={
@@ -405,10 +373,13 @@ def forecast_extended(target_name: str, horizon_hours: int) -> pd.DataFrame:
                 "forecast_median": "median",
                 "forecast_p90": "p90",
             })[["station_id", "hour_ahead", "timestamp", "p10", "median", "p90"]]
-            out = out[out["hour_ahead"] <= horizon_hours]
-            return out
+            return out[out["hour_ahead"] <= horizon_hours]
 
-    # Длинный путь: итеративный rollout
+    # Длинный путь: кэшируем самый длинный посчитанный горизонт; более короткие — срезаем.
+    cached = _FORECAST_CACHE.get(target_name)
+    if cached is not None and cached[0] >= horizon_hours:
+        return cached[1][cached[1]["hour_ahead"] <= horizon_hours].copy()
+
     print(f"\nИтеративный прогноз: {target_name}, горизонт {horizon_hours} ч")
     df_out = _iterative_forecast(target_name, horizon_hours)
     _FORECAST_CACHE[target_name] = (horizon_hours, df_out)

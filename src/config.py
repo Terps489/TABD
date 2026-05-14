@@ -51,6 +51,16 @@ TARGETS = [
 ]
 
 # ── Дашборд ────────────────────────────────────────────────────────────────────
-DASHBOARD_HOST = "0.0.0.0"
-DASHBOARD_PORT = 8050
+DASHBOARD_HOST = os.environ.get("TABD_DASHBOARD_HOST", "0.0.0.0")
+DASHBOARD_PORT = int(os.environ.get("TABD_DASHBOARD_PORT", 8050))
 DASHBOARD_DEBUG = False
+
+# График прогноза (вкладка «Прогнозы TFT») — продвинутые настройки.
+# Сколько часов факта рисовать слева от "сейчас". Удобно поставить
+# вплоть до MAX_ENCODER_LENGTH (168), если хочется видеть всю
+# историю, которую видит модель.
+FORECAST_CHART_HISTORY_HOURS = 48
+# Сколько часов прогноза рисовать справа. <=24 — берётся из готовых CSV
+# (training-time валидация, быстро). >24 — запускается итеративный rollout
+# через predict.forecast_extended; точность падает с горизонтом.
+FORECAST_CHART_FUTURE_HOURS = 24
