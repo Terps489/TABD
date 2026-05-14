@@ -53,3 +53,7 @@ Thumbs.db
 
 # Персональные пути
 LOCAL_SETUP.txt
+
+# Личные launcher-скрипты (хардкод путей под мою машину, для себя)
+train.ps1
+start.ps1

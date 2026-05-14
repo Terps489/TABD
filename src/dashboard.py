@@ -9,15 +9,15 @@ import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 import dash
-from dash import dcc, html, Input, Output, State
+from dash import dcc, html, Input, Output, State, dash_table
 import dash_bootstrap_components as dbc
 
 from src.config import (
     DETAILED_DATA, FIVE_STATIONS_DATA, DATA_CACHE,
-    OUTPUTS_DIR, MODELS_DIR, TARGETS,
+    OUTPUTS_DIR, MODELS_DIR, PROJECT_DIR, TARGETS,
     DASHBOARD_HOST, DASHBOARD_PORT, DASHBOARD_DEBUG, USE_5_STATIONS
 )
-from src.predict import generate_recommendations
+from src.predict import generate_recommendations, forecast_extended
 
 warnings.filterwarnings("ignore")
 
@@ -79,6 +79,7 @@ def _dark_layout(title: str) -> dict:
 app = dash.Dash(
     __name__,
     external_stylesheets=[dbc.themes.DARKLY],
+    assets_folder=str(PROJECT_DIR / "assets"),
     title="Татнефть АЗС — TFT Дашборд",
 )
 
@@ -219,7 +220,69 @@ app.layout = dbc.Container(fluid=True, children=[
             dbc.Row([dbc.Col(dcc.Graph(id="factor-competitor"), width=12)]),
         ]),
 
-        # ── Вкладка 5: Рекомендации ────────────────────────────────────────────
+        # ── Вкладка 5: Прогноз — таблица ──────────────────────────────────────
+        dbc.Tab(label="Прогноз — таблица", children=[
+            dbc.Row([
+                dbc.Col([
+                    html.Label("АЗС", style={"color": "#aaa"}),
+                    dcc.Dropdown(
+                        id="ftable-station",
+                        options=[{"label": s, "value": s} for s in STATIONS],
+                        value=STATIONS[0], clearable=False,
+                        style={"backgroundColor": "#333"},
+                    ),
+                ], width=3),
+                dbc.Col([
+                    html.Label("Показатель", style={"color": "#aaa"}),
+                    dcc.Dropdown(
+                        id="ftable-target",
+                        options=[{"label": t.replace("_", " ").upper(), "value": t}
+                                 for t in TARGETS],
+                        value="total_fuel_sales", clearable=False,
+                        style={"backgroundColor": "#333"},
+                    ),
+                ], width=3),
+                dbc.Col([
+                    html.Label("Горизонт", style={"color": "#aaa"}),
+                    dcc.Dropdown(
+                        id="ftable-horizon",
+                        options=[
+                            {"label": "24 часа (1 день)", "value": 24},
+                            {"label": "48 часов (2 дня)", "value": 48},
+                            {"label": "168 часов (неделя)", "value": 168},
+                            {"label": "720 часов (месяц)", "value": 720},
+                        ],
+                        value=24, clearable=False,
+                        style={"backgroundColor": "#333"},
+                    ),
+                ], width=3),
+                dbc.Col([
+                    html.Label(" ", style={"color": "#aaa"}),
+                    dbc.Button("Рассчитать", id="ftable-run",
+                               color="info", className="w-100"),
+                ], width=3),
+            ], className="mb-3 mt-3"),
+            dbc.Row([
+                dbc.Col(
+                    dbc.Alert(
+                        "Для горизонта > 24 ч модель работает итеративно "
+                        "(rollout по 24 ч), точность падает с ростом горизонта — "
+                        "это отражено расширением интервала P10–P90.",
+                        color="secondary", className="small",
+                    ), width=12
+                )
+            ]),
+            dbc.Row([
+                dbc.Col(
+                    dcc.Loading(
+                        id="ftable-loading", type="default",
+                        children=html.Div(id="ftable-output"),
+                    ), width=12
+                )
+            ]),
+        ]),
+
+        # ── Вкладка 6: Рекомендации ────────────────────────────────────────────
         dbc.Tab(label="Рекомендации", children=[
             dbc.Row([
                 dbc.Col([
@@ -438,6 +501,65 @@ def update_forecast(station, target):
     layout["yaxis"] = dict(gridcolor="#333", title="Литры/час" if "fuel" in target or "sales" in target else "Руб/час")
     fig.update_layout(**layout)
     return fig, "Прогноз загружен успешно.", "success"
+
+
+# ── Callbacks: Прогноз — таблица ───────────────────────────────────────────────
+@app.callback(
+    Output("ftable-output", "children"),
+    Input("ftable-run", "n_clicks"),
+    State("ftable-station", "value"),
+    State("ftable-target", "value"),
+    State("ftable-horizon", "value"),
+    prevent_initial_call=True,
+)
+def update_forecast_table(n_clicks, station, target, horizon):
+    if not n_clicks:
+        return ""
+    try:
+        df_fc = forecast_extended(target, int(horizon))
+    except Exception as e:
+        return dbc.Alert(f"Ошибка прогноза: {e}", color="danger")
+
+    station_id = str(df_raw[df_raw["station_name"] == station]["station_id"].iloc[0])
+    df_s = df_fc[df_fc["station_id"] == station_id].copy().sort_values("hour_ahead")
+    if df_s.empty:
+        return dbc.Alert(f"Нет прогноза для станции {station}.", color="warning")
+
+    unit = "л/ч" if ("fuel" in target or "sales" in target) and "shop" not in target else "руб/ч"
+
+    df_s["Время"] = pd.to_datetime(df_s["timestamp"]).dt.strftime("%Y-%m-%d %H:%M")
+    df_s["P10"] = df_s["p10"].round(2)
+    df_s["Медиана"] = df_s["median"].round(2)
+    df_s["P90"] = df_s["p90"].round(2)
+    df_s = df_s.rename(columns={"hour_ahead": "Ч вперёд"})
+    df_table = df_s[["Ч вперёд", "Время", "P10", "Медиана", "P90"]]
+
+    target_label = target.replace("_", " ").upper()
+    header_text = f"{target_label}  ({unit})  —  {station}  —  {len(df_table)} ч"
+
+    return html.Div([
+        html.H5(header_text, style={"color": "#17a2b8", "marginBottom": "12px"}),
+        dash_table.DataTable(
+            data=df_table.to_dict("records"),
+            columns=[{"name": c, "id": c} for c in df_table.columns],
+            page_size=24,
+            sort_action="native",
+            style_table={"overflowX": "auto"},
+            style_header={
+                "backgroundColor": "#1e1e2e", "color": "#17a2b8",
+                "fontWeight": "bold", "border": "1px solid #333",
+            },
+            style_cell={
+                "backgroundColor": "#1a1a2e", "color": "#ccc",
+                "textAlign": "center", "padding": "8px",
+                "border": "1px solid #333", "fontFamily": "monospace",
+            },
+            style_data_conditional=[
+                {"if": {"row_index": "odd"}, "backgroundColor": "#22223a"},
+                {"if": {"column_id": "Медиана"}, "color": "#ffc107", "fontWeight": "bold"},
+            ],
+        ),
+    ])
 
 
 # ── Callbacks: Факторный анализ ────────────────────────────────────────────────

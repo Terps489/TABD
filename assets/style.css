@@ -1,154 +1,232 @@
-/* Кастомные стили для тёмной темы дашборда */
+/* Кастомные стили для тёмной темы дашборда.
+   Dash 4.x: dcc.Dropdown / DatePicker используют собственные классы
+   .dash-dropdown-*, .dash-datepicker-* (Radix-based). */
 
-/* === Dropdown (dcc.Dropdown) === */
-.Select-control,
-.Select.is-focused > .Select-control,
-.Select.is-open > .Select-control {
+/* ========================================================================
+   Dropdown (dcc.Dropdown)
+   ======================================================================== */
+
+button.dash-dropdown {
     background-color: #2a2a3e !important;
-    border-color: #444 !important;
+    color: #fff !important;
+    border: 1px solid #444 !important;
+    border-radius: 4px !important;
+    padding: 8px 12px !important;
+    text-align: left !important;
+    cursor: pointer !important;
+    width: 100% !important;
+    min-height: 38px !important;
+    display: flex !important;
+    align-items: center !important;
+}
+
+button.dash-dropdown:hover,
+button.dash-dropdown[data-state="open"] {
+    border-color: #17a2b8 !important;
+}
+
+button.dash-dropdown:focus,
+button.dash-dropdown:focus-visible {
+    outline: none !important;
+    border-color: #17a2b8 !important;
+    box-shadow: 0 0 0 2px rgba(23, 162, 184, 0.25) !important;
+}
+
+.dash-dropdown-grid-container,
+.dash-dropdown-trigger {
+    background-color: transparent !important;
+    color: inherit !important;
+    width: 100% !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+}
+
+.dash-dropdown-value,
+.dash-dropdown-value-item {
+    color: #fff !important;
+    background-color: transparent !important;
+}
+
+.dash-dropdown-value-item span,
+.dash-dropdown-value > span {
     color: #fff !important;
 }
 
-.Select-value-label,
-.Select-value > span,
-.Select-placeholder,
-.Select-input > input,
-.Select-input,
-.has-value.Select--single > .Select-control .Select-value .Select-value-label {
-    color: #fff !important;
+.dash-dropdown-placeholder {
+    color: #888 !important;
 }
 
-.Select-menu-outer {
+.dash-dropdown-trigger-icon,
+.dash-dropdown-trigger-icon path {
+    color: #aaa !important;
+    fill: currentColor !important;
+}
+
+/* Попап dropdown'а (Radix-портал, монтируется в body) */
+.dash-dropdown-content,
+[data-radix-popper-content-wrapper] [role="listbox"],
+[data-radix-popper-content-wrapper] > * {
     background-color: #2a2a3e !important;
-    border-color: #444 !important;
     color: #fff !important;
+    border: 1px solid #444 !important;
+    border-radius: 4px !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
 }
 
-.Select-option {
+.dash-dropdown-item,
+.dash-dropdown-option,
+[role="option"] {
     background-color: #2a2a3e !important;
     color: #ddd !important;
+    padding: 6px 12px !important;
+    cursor: pointer !important;
 }
 
-.Select-option.is-focused,
-.Select-option:hover {
+.dash-dropdown-item:hover,
+.dash-dropdown-item[data-highlighted],
+.dash-dropdown-option:hover,
+.dash-dropdown-option[data-highlighted],
+[role="option"][data-highlighted],
+[role="option"]:hover {
     background-color: #17a2b8 !important;
     color: #fff !important;
+    outline: none !important;
 }
 
-.Select-option.is-selected {
+.dash-dropdown-item[data-state="checked"],
+.dash-dropdown-option[data-state="checked"],
+[role="option"][aria-selected="true"] {
     background-color: #1a4d5a !important;
     color: #fff !important;
 }
 
-.Select-arrow,
-.Select-arrow-zone {
-    color: #aaa !important;
-}
-
-.Select-clear-zone,
-.Select-clear {
-    color: #aaa !important;
-}
-
-/* === Dropdown (новый rc-select / react-select) === */
-.dash-dropdown .Select__control,
-.dash-dropdown .Select__control--is-focused,
-.dash-dropdown .Select__control--is-open {
-    background-color: #2a2a3e !important;
-    border-color: #444 !important;
-}
-
-.dash-dropdown .Select__single-value,
-.dash-dropdown .Select__placeholder,
-.dash-dropdown .Select__input-container,
-.dash-dropdown .Select__input {
+.dash-dropdown-search,
+.dash-dropdown-search-input,
+input.dash-dropdown-search-input {
+    background-color: #1e1e2e !important;
     color: #fff !important;
+    border: 1px solid #444 !important;
+    border-radius: 3px !important;
+    padding: 6px 8px !important;
 }
 
-.dash-dropdown .Select__menu {
+input.dash-dropdown-search-input::placeholder {
+    color: #888 !important;
+}
+
+/* ========================================================================
+   DatePicker (dcc.DatePickerRange)
+   ======================================================================== */
+
+input.dash-datepicker-input,
+.dash-datepicker-input,
+input.dash-datepicker-start-date,
+input.dash-datepicker-end-date {
     background-color: #2a2a3e !important;
     color: #fff !important;
+    border: 1px solid #444 !important;
+    border-radius: 4px !important;
+    padding: 8px 10px !important;
+    min-width: 90px !important;
+    box-sizing: border-box !important;
 }
 
-.dash-dropdown .Select__option {
-    background-color: #2a2a3e !important;
-    color: #ddd !important;
+input.dash-datepicker-input::placeholder,
+input.dash-datepicker-start-date::placeholder,
+input.dash-datepicker-end-date::placeholder {
+    color: #888 !important;
 }
 
-.dash-dropdown .Select__option--is-focused {
-    background-color: #17a2b8 !important;
+input.dash-datepicker-input:focus,
+input.dash-datepicker-start-date:focus,
+input.dash-datepicker-end-date:focus {
+    border-color: #17a2b8 !important;
+    outline: none !important;
+    box-shadow: 0 0 0 2px rgba(23, 162, 184, 0.25) !important;
 }
 
-/* === DatePicker (dcc.DatePickerRange) === */
-.DateInput,
-.DateInput_input,
-.DateRangePickerInput,
-.DateRangePicker {
+/* Календарный попап (Radix-портал) */
+.dash-datepicker,
+.dash-datepicker-content,
+.dash-datepicker-calendar,
+.dash-datepicker-range,
+.dash-datepicker-popover {
     background-color: #2a2a3e !important;
     color: #fff !important;
-}
-
-.DateInput_input {
-    border: none !important;
-    color: #fff !important;
-    padding: 8px !important;
-}
-
-.DateRangePickerInput {
     border: 1px solid #444 !important;
     border-radius: 4px !important;
 }
 
-.DateRangePickerInput_arrow svg,
-.DateRangePickerInput_clearDates_default svg {
-    fill: #aaa !important;
-}
-
-/* Календарь (попап) */
-.DayPicker,
-.DayPicker_focusRegion,
-.CalendarMonthGrid,
-.CalendarMonth {
-    background-color: #2a2a3e !important;
+.dash-datepicker-day,
+.dash-datepicker-day-button,
+button.dash-datepicker-day {
+    background-color: transparent !important;
     color: #fff !important;
+    border: none !important;
+    padding: 6px !important;
+    cursor: pointer !important;
 }
 
-.CalendarMonth_caption,
-.DayPicker_weekHeader_li small {
+.dash-datepicker-day:hover,
+.dash-datepicker-day-button:hover {
+    background-color: #444 !important;
     color: #fff !important;
+    border-radius: 4px !important;
 }
 
-.CalendarDay__default {
-    background-color: #2a2a3e !important;
-    color: #fff !important;
-    border: 1px solid #444 !important;
-}
-
-.CalendarDay__selected,
-.CalendarDay__selected_span,
-.CalendarDay__hovered_span {
+.dash-datepicker-day[data-selected="true"],
+.dash-datepicker-day[data-state="selected"],
+.dash-datepicker-day-selected,
+.dash-datepicker-day[aria-selected="true"] {
     background-color: #17a2b8 !important;
     color: #fff !important;
-    border: 1px solid #17a2b8 !important;
+    border-radius: 4px !important;
 }
 
-.CalendarDay__default:hover {
+.dash-datepicker-day-in-range,
+.dash-datepicker-day[data-in-range="true"] {
+    background-color: #1a4d5a !important;
+    color: #fff !important;
+}
+
+.dash-datepicker-day[data-disabled="true"],
+.dash-datepicker-day-disabled {
+    color: #555 !important;
+    cursor: not-allowed !important;
+}
+
+.dash-datepicker-month-label,
+.dash-datepicker-weekday,
+.dash-datepicker-header {
+    color: #aaa !important;
+}
+
+.dash-datepicker-nav-button,
+button.dash-datepicker-nav-button {
+    color: #fff !important;
+    background-color: transparent !important;
+    border: none !important;
+}
+
+.dash-datepicker-nav-button:hover {
     background-color: #444 !important;
 }
 
-/* === Checklist === */
+/* ========================================================================
+   Общее: чек-листы, карточки, скроллбар
+   ======================================================================== */
+
 .dash-checklist label,
 input[type="checkbox"] + label {
     color: #ccc !important;
 }
 
-/* === Карточки и контейнеры === */
 .card {
     background-color: #1e1e2e !important;
     border-color: #333 !important;
 }
 
-/* Подсветка скроллбара */
 ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
